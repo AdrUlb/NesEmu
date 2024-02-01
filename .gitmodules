@@ -1,0 +1,3 @@
+[submodule "External/RenderThing"]
+	path = External/RenderThing
+	url = https://github.com/AdrUlb/RenderThing
