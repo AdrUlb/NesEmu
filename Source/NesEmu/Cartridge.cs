@@ -2,7 +2,8 @@
 
 internal sealed class Cartridge
 {
-	private readonly byte[] _rom = new byte[0x4000];
+	private readonly byte[] _prgRom = new byte[0x4000];
+	private readonly byte[] _chrRom = new byte[0x2000];
 
 	public Cartridge(Stream data)
 	{
@@ -14,17 +15,17 @@ internal sealed class Cartridge
 		if (!header[..4].SequenceEqual(signature))
 			throw new("Not a valid iNES file.");
 
-		data.ReadExactly(_rom);
+		data.ReadExactly(_prgRom);
 	}
 
-	public byte ReadByte(ushort address) => address switch
+	public byte CpuReadByte(ushort address) => address switch
 	{
-		>= 0x8000 and < 0xC000 => _rom[address - 0x8000],
-		>= 0xC000 => _rom[address - 0xC000],
+		>= 0x8000 and < 0xC000 => _prgRom[address - 0x8000],
+		>= 0xC000 => _prgRom[address - 0xC000],
 		_ => 0xFF,
 	};
 
-	public void WriteByte(ushort address, byte value)
+	public void CpuWriteByte(ushort address, byte value)
 	{
 		
 	}

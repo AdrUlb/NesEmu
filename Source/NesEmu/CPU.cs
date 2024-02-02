@@ -464,7 +464,7 @@ internal sealed class CPU
 	public CPU(Bus bus)
 	{
 		_bus = bus;
-		_regPc = 0xC000;
+		_regPc = (ushort)((bus.ReadByte(0xFFFD) << 8) | bus.ReadByte(0xFFFC));
 		_regSpLo = 0xFD;
 
 		_flagNegative = false;
@@ -474,9 +474,6 @@ internal sealed class CPU
 		_flagInterruptDisable = true;
 		_flagZero = false;
 		_flagCarry = false;
-
-		var nesFile = File.ReadAllBytes(@"C:\Users\Adrian\Desktop\nestest.nes");
-		var romData = nesFile.AsSpan()[0x10..(0x4000 + 0x10)];
 	}
 
 	private byte ReadByte(ushort address) => _bus.ReadByte(address);
@@ -723,15 +720,15 @@ internal sealed class CPU
 		{
 			_currentOpcode = FetchByte();
 
-			var sb = new StringBuilder();
-			sb.Append($"{_regPc:X4}  {_currentOpcode:X2}");
+			/*var sb = new StringBuilder();
+			sb.Append($"{_regPc - 1:X4}  {_currentOpcode:X2}");
 			for (var i = 0; i < _instructions[_currentOpcode].Bytes - 1; i++)
 				sb.Append($" {ReadByte((ushort)(_regPc + i)):X2}");
 			sb.Append(new string(' ', 16 - sb.Length));
 			sb.Append(DisassembleNext());
 			sb.Append(new string(' ', 48 - sb.Length));
 			sb.Append($"A:{_regA:X2} X:{_regX:X2} Y:{_regY:X2} P:{RegStatus:X2} SP:{_regSpLo:X2} CYC:{_cycles}");
-			Console.WriteLine(sb);
+			Console.WriteLine(sb);*/
 		}
 
 		switch (_instructions[_currentOpcode].Instruction)

@@ -13,4 +13,8 @@
 		<IlcDisableReflection>true</IlcDisableReflection>
 	</PropertyGroup>
 
+	<ItemGroup>
+	  <ProjectReference Include="..\..\External\RenderThing\Source\RenderThing\RenderThing.csproj" />
+	</ItemGroup>
+
 </Project>

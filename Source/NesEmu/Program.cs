@@ -1,16 +1,33 @@
 ﻿using NesEmu;
 
-
-Cartridge cartridge;
-using (var fs = File.OpenRead(@"C:\Users\Adrian\Desktop\nestest.nes"))
-	cartridge = new(fs);
-
-var bus = new Bus
+internal static class Program
 {
-	Cartridge = cartridge
-};
+	private static void Main()
+	{
+		Cartridge cartridge;
+		using (var fs = File.OpenRead(@"C:\Users\Adrian\Desktop\nestest.nes"))
+			cartridge = new(fs);
 
-var cpu = new CPU(bus);
+		var bus = new Bus
+		{
+			Cartridge = cartridge
+		};
 
-while (true)
-	cpu.ExecuteCycle();
+		var cpu = new CPU(bus);
+
+		var running = true;
+
+		var emulationThread = new Thread(() =>
+		{
+			while (running)
+				cpu.ExecuteCycle();
+		});
+
+		emulationThread.Start();
+
+		var window = new MainWindow();
+		window.Run();
+
+		running = false;
+	}
+}
