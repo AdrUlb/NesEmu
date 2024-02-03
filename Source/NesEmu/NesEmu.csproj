@@ -14,7 +14,13 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-	  <ProjectReference Include="..\..\External\RenderThing\Source\RenderThing\RenderThing.csproj" />
+		<ProjectReference Include="..\..\External\RenderThing\Source\RenderThing\RenderThing.csproj" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<None Update="palette.pal">
+			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
+		</None>
 	</ItemGroup>
 
 </Project>

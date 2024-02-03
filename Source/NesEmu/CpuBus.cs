@@ -1,10 +1,17 @@
 ﻿namespace NesEmu;
 
+// https://www.nesdev.org/wiki/CPU_memory_map
 internal sealed class CpuBus
 {
 	private readonly byte[] _ram = new byte[0x0800];
 
+	public Ppu? Ppu;
 	public Cartridge? Cartridge = null;
+
+	public CpuBus()
+	{
+
+	}
 
 	public byte ReadByte(ushort address)
 	{
@@ -19,6 +26,9 @@ internal sealed class CpuBus
 			>= 0x0800 and < 0x1000 => _ram[address - 0x0800],
 			>= 0x1000 and < 0x1800 => _ram[address - 0x1000],
 			>= 0x1800 and < 0x2000 => _ram[address - 0x1800],
+			>= 0x2000 and < 0x4000 => Ppu?.ReadReg(((address - 0x2000) % 8) + 0x2000) ?? 0xFF,
+			0x4014 => Ppu?.ReadReg(0x4014) ?? 0xFF,
+			0x4016 or 0x4018 => 0,
 			_ => 0xFF
 		};
 
@@ -35,6 +45,8 @@ internal sealed class CpuBus
 			case 0x0800 and < 0x1000: _ram[address - 0x0800] = value; break;
 			case 0x1000 and < 0x1800: _ram[address - 0x1000] = value; break;
 			case 0x1800 and < 0x2000: _ram[address - 0x1800] = value; break;
+			case >= 0x2000 and < 0x4000: Ppu?.WriteReg(((address - 0x2000) % 8) + 0x2000, value); break;
+			case 0x4014: Ppu?.WriteReg(0x4014, value); break;
 		}
 	}
 }

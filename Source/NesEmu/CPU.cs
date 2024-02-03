@@ -1,13 +1,12 @@
 ﻿using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using System.Text;
 
 namespace NesEmu;
 
 // https://www.pagetable.com/?p=410
 // https://www.masswerk.at/6502/6502_instruction_set.html
 // https://www.nesdev.org/obelisk-6502-guide/reference.html
-internal sealed class CPU
+internal sealed class Cpu
 {
 	private enum AddressingMode
 	{
@@ -420,7 +419,7 @@ internal sealed class CPU
 
 	private ushort RegSp => (ushort)((_regSpHi << 8) | _regSpLo);
 
-	private readonly Bus _bus;
+	private readonly CpuBus _bus;
 
 	private byte _currentOpcode = 0;
 	private int _step = 0;
@@ -432,6 +431,7 @@ internal sealed class CPU
 	private byte _fetchHigh;
 	private byte _memOperand;
 	private bool _pageBoundaryCrossed;
+	private bool _nmi = false;
 
 	private AddressingMode CurrentAddressingMode => _instructions[_currentOpcode].AddressingMode;
 
@@ -461,10 +461,15 @@ internal sealed class CPU
 		}
 	}
 
-	public CPU(Bus bus)
+	public Cpu(CpuBus bus)
 	{
 		_bus = bus;
-		_regPc = (ushort)((bus.ReadByte(0xFFFD) << 8) | bus.ReadByte(0xFFFC));
+		Reset();
+	}
+
+	public void Reset()
+	{
+		_regPc = (ushort)((_bus.ReadByte(0xFFFD) << 8) | _bus.ReadByte(0xFFFC));
 		_regSpLo = 0xFD;
 
 		_flagNegative = false;
@@ -714,10 +719,22 @@ internal sealed class CPU
 		};
 	}
 
-	public void ExecuteCycle()
+	public void Tick()
 	{
 		if (_step == 0)
 		{
+			if (_nmi)
+			{
+				_nmi = false;
+				PushByte((byte)((_regPc + 2) >> 8));
+				PushByte((byte)((_regPc + 2) & 0xFF));
+				PushByte(RegStatus);
+				_fetchLow = ReadByte(0xFFFA);
+				_fetchHigh = ReadByte(0xFFFB);
+				_regPc = (ushort)((_fetchHigh << 8) | _fetchLow);
+				_flagInterruptDisable = true;
+			}
+
 			_currentOpcode = FetchByte();
 
 			/*var sb = new StringBuilder();
@@ -802,6 +819,11 @@ internal sealed class CPU
 		}
 
 		_cycles++;
+	}
+
+	public void RequestNmi()
+	{
+		_nmi = true;
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
