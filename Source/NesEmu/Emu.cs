@@ -17,7 +17,7 @@ internal sealed class Emu
 	private readonly long _ticksPerFrame = (long)(Stopwatch.Frequency / _framesPerSecond);
 	private readonly long _cyclesPerFrame = (long)(_cyclesPerSecond / _framesPerSecond);
 
-	private readonly Stopwatch _sw = new();
+	public event EventHandler? VblankInterrupt;
 
 	public Emu()
 	{
@@ -42,9 +42,10 @@ internal sealed class Emu
 	private void EmuThreadProc()
 	{
 		var lastTime = Stopwatch.GetTimestamp();
+
 		while (_running)
 		{
-			long cycles = 0;
+			uint cycles = 0;
 			while (cycles < _cyclesPerFrame)
 			{
 				cycles++;
@@ -53,6 +54,7 @@ internal sealed class Emu
 				{
 					Ppu.RequestVblankInterrupt = false;
 					Cpu.RequestNmi();
+					VblankInterrupt?.Invoke(this, EventArgs.Empty);
 				}
 
 				Cpu.Tick();

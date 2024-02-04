@@ -9,9 +9,12 @@ internal class MainWindow : Window
 
 	private Texture _tex = null!;
 
+	private volatile bool _waitForVblank = true;
+
 	public MainWindow() : base(resizable: false)
 	{
 		Size = new(256 * 2, 240 * 2);
+		_emu.VblankInterrupt += (_, _) => _waitForVblank = false;
 	}
 
 	protected override void OnCloseClicked()
@@ -22,6 +25,10 @@ internal class MainWindow : Window
 
 	protected override void OnRender(Renderer renderer)
 	{
+		while (_waitForVblank) { }
+
+		_waitForVblank = true;
+
 		for (var y = 0; y < _tex.Height; y++)
 		{
 			for (var x = 0; x < _tex.Width; x++)
