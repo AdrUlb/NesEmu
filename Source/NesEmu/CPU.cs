@@ -419,7 +419,7 @@ internal sealed class Cpu
 
 	private ushort RegSp => (ushort)((_regSpHi << 8) | _regSpLo);
 
-	private readonly CpuBus _bus;
+	public readonly CpuBus Bus;
 
 	private byte _currentOpcode = 0;
 	private int _step = 0;
@@ -461,15 +461,14 @@ internal sealed class Cpu
 		}
 	}
 
-	public Cpu(CpuBus bus)
+	public Cpu()
 	{
-		_bus = bus;
-		Reset();
+		Bus = new();
 	}
 
 	public void Reset()
 	{
-		_regPc = (ushort)((_bus.ReadByte(0xFFFD) << 8) | _bus.ReadByte(0xFFFC));
+		_regPc = (ushort)((Bus.ReadByte(0xFFFD) << 8) | Bus.ReadByte(0xFFFC));
 		_regSpLo = 0xFD;
 
 		_flagNegative = false;
@@ -481,9 +480,9 @@ internal sealed class Cpu
 		_flagCarry = false;
 	}
 
-	private byte ReadByte(ushort address) => _bus.ReadByte(address);
+	private byte ReadByte(ushort address) => Bus.ReadByte(address);
 
-	private void WriteByte(ushort address, byte value) => _bus.WriteByte(address, value);
+	private void WriteByte(ushort address, byte value) => Bus.WriteByte(address, value);
 
 	private byte FetchByte() => ReadByte(_regPc++);
 

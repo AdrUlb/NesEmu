@@ -13,6 +13,7 @@ internal class MainWindow : Window
 
 	public MainWindow() : base(resizable: false)
 	{
+		Title = "Adrian's NES Emulator";
 		Size = new(256 * 2, 240 * 2);
 		_emu.VblankInterrupt += (_, _) => _waitForVblank = false;
 	}
@@ -56,5 +57,70 @@ internal class MainWindow : Window
 	{
 		_emu.Stop();
 		_tex.Dispose();
+	}
+
+	protected override void OnKeyDown(KeyboardKey key, ModifierKeys modifiers)
+	{
+		switch (key)
+		{
+			case KeyboardKey.Escape:
+				Stop();
+				break;
+			case KeyboardKey.Up:
+				_emu.Controller.UpPressed = true;
+				break;
+			case KeyboardKey.Down:
+				_emu.Controller.DownPressed = true;
+				break;
+			case KeyboardKey.Left:
+				_emu.Controller.LeftPressed = true;
+				break;
+			case KeyboardKey.Right:
+				_emu.Controller.RightPressed = true;
+				break;
+			case KeyboardKey.Enter:
+				_emu.Controller.StartPressed = true;
+				break;
+			case KeyboardKey.Space:
+				_emu.Controller.SelectPressed = true;
+				break;
+			case KeyboardKey.S:
+				_emu.Controller.APressed = true;
+				break;
+			case KeyboardKey.A:
+				_emu.Controller.BPressed = true;
+				break;
+		}
+	}
+
+	protected override void OnKeyUp(KeyboardKey key, ModifierKeys modifiers)
+	{
+		switch (key)
+		{
+			case KeyboardKey.Up:
+				_emu.Controller.UpPressed = false;
+				break;
+			case KeyboardKey.Down:
+				_emu.Controller.DownPressed = false;
+				break;
+			case KeyboardKey.Left:
+				_emu.Controller.LeftPressed = false;
+				break;
+			case KeyboardKey.Right:
+				_emu.Controller.RightPressed = false;
+				break;
+			case KeyboardKey.Enter:
+				_emu.Controller.StartPressed = false;
+				break;
+			case KeyboardKey.Space:
+				_emu.Controller.SelectPressed = false;
+				break;
+			case KeyboardKey.S:
+				_emu.Controller.APressed = false;
+				break;
+			case KeyboardKey.A:
+				_emu.Controller.BPressed = false;
+				break;
+		}
 	}
 }

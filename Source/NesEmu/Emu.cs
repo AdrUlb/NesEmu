@@ -5,10 +5,6 @@ namespace NesEmu;
 internal sealed class Emu
 {
 	private readonly Thread _emuThread;
-	public readonly Cpu Cpu;
-	public readonly Ppu Ppu;
-	public readonly CpuBus CpuBus;
-	public readonly PpuBus PpuBus;
 
 	private volatile bool _running = false;
 
@@ -18,23 +14,29 @@ internal sealed class Emu
 	private readonly long _cyclesPerFrame = (long)(_cyclesPerSecond / _framesPerSecond);
 
 	public event EventHandler? VblankInterrupt;
+	public readonly Cpu Cpu;
+	public readonly Ppu Ppu;
+	public readonly Controller Controller;
+
+	private readonly Stopwatch sw = new();
 
 	public Emu()
 	{
-		CpuBus = new CpuBus();
-		PpuBus = new PpuBus();
+		Cpu = new();
+		Ppu = new Ppu(Cpu.Bus);
+		Controller = new();
 
-		using (var fs = File.OpenRead(@"C:\Users\Adrian\Desktop\pacman.nes"))
+		Cpu.Bus.Ppu = Ppu;
+		Cpu.Bus.Controller = Controller;
+
+		using (var fs = File.OpenRead(@"C:\Stuff\Roms\NES\pacman.nes"))
 		{
-			var cart = new Cartridge(fs);
-			CpuBus.Cartridge = cart;
-			PpuBus.Cartridge = cart;
+			var cart = new Cartridge(Ppu, fs);
+			Cpu.Bus.Cartridge = cart;
+			Ppu.Bus.Cartridge = cart;
 		}
 
-		Cpu = new Cpu(CpuBus);
-		Ppu = new Ppu(PpuBus, CpuBus);
-
-		CpuBus.Ppu = Ppu;
+		Cpu.Reset();
 
 		_emuThread = new Thread(EmuThreadProc);
 	}
@@ -58,18 +60,19 @@ internal sealed class Emu
 				}
 
 				Cpu.Tick();
-				Ppu.Tick();
-				Ppu.Tick();
-				Ppu.Tick();
+				Ppu.Ticks(3);
 			}
 
-			long thisTime;
+			/*long thisTime;
 			do
 			{
 				thisTime = Stopwatch.GetTimestamp();
 			}
 			while (thisTime - lastTime < _ticksPerFrame);
-			lastTime = thisTime;
+			lastTime = thisTime;*/
+
+			Console.WriteLine($"Frame took {sw.Elapsed.TotalMilliseconds}ms");
+			sw.Restart();
 		}
 	}
 

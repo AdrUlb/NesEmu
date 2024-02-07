@@ -1,7 +1,7 @@
 ﻿using System.Diagnostics;
 using System.Drawing;
-using System.Net;
-using static System.Net.Mime.MediaTypeNames;
+using System.Runtime.CompilerServices;
+using System.Text.Encodings.Web;
 
 namespace NesEmu;
 
@@ -10,11 +10,11 @@ internal sealed class Ppu
 	public const int ScreenWidth = 256;
 	public const int ScreenHeight = 240;
 
-	private readonly PpuBus _bus;
+	public readonly PpuBus Bus;
 	private readonly CpuBus _cpuBus;
 
 	private int _scanline;
-	private int _cycles;
+	private int _point;
 	private ushort _regAddr = 0;
 	private byte _regData = 0;
 	private byte _oamAddr;
@@ -32,8 +32,8 @@ internal sealed class Ppu
 	private readonly Color[] _palette = new Color[64];
 	private readonly byte[] _oam = new byte[256];
 
+	public readonly byte[] Vram = new byte[0x800];
 	public readonly Color[] Framebuffer = new Color[ScreenWidth * ScreenHeight];
-
 
 	public bool RequestVblankInterrupt { get; set; } = false;
 
@@ -70,19 +70,19 @@ internal sealed class Ppu
 		);
 	}
 
-	public Ppu(PpuBus bus, CpuBus cpuBus)
+	public Ppu(CpuBus cpuBus)
 	{
-		_bus = bus;
+		Bus = new(this);
 		_cpuBus = cpuBus;
-		using (var fs = File.OpenRead("palette.pal"))
+
+		using var fs = File.OpenRead("palette.pal");
+
+		Span<byte> pal = stackalloc byte[64 * 3];
+		fs.ReadExactly(pal);
+		for (var i = 0; i < 64; i++)
 		{
-			Span<byte> pal = stackalloc byte[64 * 3];
-			fs.ReadExactly(pal);
-			for (var i = 0; i < 64; i++)
-			{
-				var ii = i * 3;
-				_palette[i] = Color.FromArgb(pal[ii + 0], pal[ii + 1], pal[ii + 2]);
-			}
+			var ii = i * 3;
+			_palette[i] = Color.FromArgb(pal[ii + 0], pal[ii + 1], pal[ii + 2]);
 		}
 	}
 
@@ -99,10 +99,10 @@ internal sealed class Ppu
 			case 0x2007: // PPUDATA
 				{
 					if (_regAddr is >= 0x3F00 and < 0x4000) // no dummy read required for palette ram
-						return _regData = _bus.ReadByte(_regAddr++);
+						return _regData = Bus.ReadByte(_regAddr++);
 
 					var ret = _regData;
-					_regData = _bus.ReadByte(_regAddr++);
+					_regData = Bus.ReadByte(_regAddr++);
 					return ret;
 				}
 
@@ -134,7 +134,7 @@ internal sealed class Ppu
 				break;
 			case 0x2007: // PPUDATA
 				_regData = value;
-				_bus.WriteByte(_regAddr++, value);
+				Bus.WriteByte(_regAddr++, value);
 				break;
 			case 0x4014: // OAMDMA
 				for (var i = 0; i < _oam.Length; i++)
@@ -143,120 +143,30 @@ internal sealed class Ppu
 		}
 	}
 
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public void Ticks(int count)
+	{
+		for (var i = 0; i < count; i++)
+			Tick();
+	}
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public void Tick()
 	{
-		_cycles++;
+		_point++;
 
-		if (_cycles == 341)
+		if (_point < ScreenWidth && _scanline < ScreenHeight)
+		{
+			DrawPoint();
+			return;
+		}
+
+		if (_point == 341)
 		{
 			_scanline++;
-			_cycles = 0;
+			_point = 0;
 			if (_scanline == 241)
 			{
-				var nametableAddress = _ctrlBaseNametableAddr switch
-				{
-					0 => 0x2000,
-					1 => 0x2400,
-					2 => 0x2800,
-					3 => 0x2C00,
-					_ => throw new UnreachableException()
-				};
-
-				var backgroundPatternTable = _ctrlBackgroundPatternTable ? 0x1000 : 0x0000;
-				var spritePatternTable = _ctrlSpritePatternTable ? 0x1000 : 0x0000;
-
-				for (var tileY = 0; tileY < 30; tileY++)
-				{
-					for (var tileX = 0; tileX < 32; tileX++)
-					{
-						var i = tileX + (tileY * 32);
-
-						var tileId = _bus.ReadByte((ushort)(nametableAddress + i));
-						var tileOff = (tileId * 16) + backgroundPatternTable;
-
-						var attribIndex = (tileY / 4 * 8) + (tileX / 4);
-						var attrib = _bus.ReadByte((ushort)(nametableAddress + 0x03C0 + attribIndex));
-
-						var paletteIndex = (tileX % 4 / 2, tileY % 4 / 2) switch
-						{
-							(0, 0) => attrib & 0b11,
-							(1, 0) => (attrib >> 2) & 0b11,
-							(0, 1) => (attrib >> 4) & 0b11,
-							(1, 1) => (attrib >> 6) & 0b11,
-							_ => throw new UnreachableException()
-						};
-
-						var paletteOffset = 0x3F01 + (paletteIndex * 4);
-
-						for (var y = 0; y < 8; y++)
-						{
-							var msb = _bus.ReadByte((ushort)(tileOff + y + 8));
-							var lsb = _bus.ReadByte((ushort)(tileOff + y));
-							for (var x = 0; x < 8; x++)
-							{
-								var colorIndex = ((msb >> 7) << 1) | (lsb >> 7);
-								msb <<= 1;
-								lsb <<= 1;
-								var color = colorIndex switch
-								{
-									0 => _palette[_bus.ReadByte(0x3F00)],
-									1 => _palette[_bus.ReadByte((ushort)(paletteOffset + 0))],
-									2 => _palette[_bus.ReadByte((ushort)(paletteOffset + 1))],
-									3 => _palette[_bus.ReadByte((ushort)(paletteOffset + 2))],
-									_ => throw new UnreachableException()
-								};
-								var xx = (tileX * 8) + x;
-								var yy = (tileY * 8) + y;
-								Framebuffer[xx + (yy * 256)] = color;
-							}
-						}
-					}
-				}
-
-				for (var i = 0; i < 64; i++)
-				{
-					var off = i * 4;
-					var yPos = _oam[off + 0];
-					var tileId = _oam[off + 1];
-					var attrib = _oam[off + 2];
-					var xPos = _oam[off + 3];
-
-					var paletteIndex = attrib & 0b11;
-					var tileOff = (tileId * 16) + spritePatternTable;
-
-					var paletteOffset = 0x3F11 + (paletteIndex * 4);
-
-					var flipX = (attrib & (1 << 6)) != 0;
-					var flipY = (attrib & (1 << 7)) != 0;
-
-					for (var y = 0; y < 8; y++)
-					{
-						var msb = _bus.ReadByte((ushort)(tileOff + y + 8));
-						var lsb = _bus.ReadByte((ushort)(tileOff + y));
-						for (var x = 0; x < 8; x++)
-						{
-							var colorIndex = ((msb >> 7) << 1) | (lsb >> 7);
-							msb <<= 1;
-							lsb <<= 1;
-							var color = colorIndex switch
-							{
-								0 => Color.Transparent,
-								1 => _palette[_bus.ReadByte((ushort)(paletteOffset + 0))],
-								2 => _palette[_bus.ReadByte((ushort)(paletteOffset + 1))],
-								3 => _palette[_bus.ReadByte((ushort)(paletteOffset + 2))],
-								_ => throw new UnreachableException()
-							};
-							if (color == Color.Transparent)
-								continue;
-							var xx = xPos + (flipX ? 7 - x : x);
-							var yy = yPos + (flipY ? 7 - y : y);
-							if (xx < 0 || yy < 0 || xx >= ScreenWidth || yy >= ScreenHeight)
-								continue;
-							Framebuffer[xx + (yy * 256)] = color;
-						}
-					}
-				}
-
 				_statusVblank = true;
 				if (_ctrlEnableVblankNmi)
 					RequestVblankInterrupt = true;
@@ -267,5 +177,114 @@ internal sealed class Ppu
 				_statusVblank = false;
 			}
 		}
+	}
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	private void DrawPoint()
+	{
+		var nametableAddress = _ctrlBaseNametableAddr switch
+		{
+			0 => PpuBus.Nametable0Address,
+			1 => PpuBus.Nametable1Address,
+			2 => PpuBus.Nametable2Address,
+			3 => PpuBus.Nametable3Address,
+			_ => throw new UnreachableException()
+		};
+
+		var spritePatternTable = _ctrlSpritePatternTable ? PpuBus.PatternTable1Address : PpuBus.PatternTable0Address;
+
+		Color color;
+
+		{
+			for (var i = 0; i < 64; i++)
+			{
+				var off = i * 4;
+				var yPos = _oam[off + 0];
+
+				var y = _scanline - yPos;
+
+				if (y is < 0 or >= 8)
+					continue;
+
+				var tileId = _oam[off + 1];
+				var attrib = _oam[off + 2];
+				var xPos = _oam[off + 3];
+
+				var x = _point - xPos;
+
+				if (x is < 0 or >= 8)
+					continue;
+
+				var paletteIndex = attrib & 0b11;
+				var tileOff = (tileId * 16) + spritePatternTable;
+
+				var paletteOffset = PpuBus.PaletteRamAddress + 0x11 + (paletteIndex * 4);
+
+				var flipX = (attrib & (1 << 6)) != 0;
+				var flipY = (attrib & (1 << 7)) != 0;
+
+				var flippedX = flipX ? x : 7 - x;
+				var flippedY = flipY ? 7 - y : y;
+
+				var msb = Bus.ReadByte((ushort)(tileOff + flippedY + 8));
+				var lsb = Bus.ReadByte((ushort)(tileOff + flippedY));
+
+				var colorIndex = (((msb >> flippedX) & 1) << 1) | ((lsb >> flippedX) & 1);
+				color = colorIndex switch
+				{
+					0 => Color.Transparent,
+					1 => _palette[Bus.ReadByte((ushort)(paletteOffset + 0))],
+					2 => _palette[Bus.ReadByte((ushort)(paletteOffset + 1))],
+					3 => _palette[Bus.ReadByte((ushort)(paletteOffset + 2))],
+					_ => throw new UnreachableException()
+				};
+
+				if (color == Color.Transparent)
+					continue;
+
+				goto end;
+			}
+		}
+
+		var bgPatternTable = _ctrlBackgroundPatternTable ? PpuBus.PatternTable1Address : PpuBus.PatternTable0Address;
+		var bgTileColumn = _point >> 3;
+		var bgTileRow = _scanline >> 3;
+		var bgTileX = _point & 0b111;
+		var bgTileY = _scanline & 0b111;
+		var bgTileIndex = bgTileColumn + (bgTileRow * 32);
+		var bgTileId = Bus.ReadByte((ushort)(nametableAddress + bgTileIndex));
+		var bgPatternOffset = (bgTileId * 16) + bgPatternTable;
+
+		{
+			var attribIndex = (bgTileRow / 4 * 8) + (bgTileColumn >> 2);
+			var attrib = Bus.ReadByte((ushort)(nametableAddress + 0x03C0 + attribIndex));
+
+			var paletteIndex = (bgTileColumn % 4 / 2, bgTileRow % 4 / 2) switch
+			{
+				(0, 0) => attrib & 0b11,
+				(1, 0) => (attrib >> 2) & 0b11,
+				(0, 1) => (attrib >> 4) & 0b11,
+				(1, 1) => (attrib >> 6) & 0b11,
+				_ => throw new UnreachableException()
+			};
+
+			var paletteOffset = PpuBus.PaletteRamAddress + 1 + (paletteIndex * 4);
+
+			var msb = Bus.ReadByte((ushort)(bgPatternOffset + bgTileY + 8));
+			var lsb = Bus.ReadByte((ushort)(bgPatternOffset + bgTileY));
+
+			var colorIndex = (((msb >> (7 - bgTileX)) & 1) << 1) | ((lsb >> (7 - bgTileX)) & 1);
+			color = colorIndex switch
+			{
+				0 => _palette[Bus.ReadByte(PpuBus.PaletteRamAddress)],
+				1 => _palette[Bus.ReadByte((ushort)(paletteOffset + 0))],
+				2 => _palette[Bus.ReadByte((ushort)(paletteOffset + 1))],
+				3 => _palette[Bus.ReadByte((ushort)(paletteOffset + 2))],
+				_ => throw new UnreachableException()
+			};
+		}
+
+	end:
+		Framebuffer[_point + (_scanline * ScreenWidth)] = color;
 	}
 }

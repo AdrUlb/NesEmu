@@ -7,6 +7,7 @@ internal sealed class CpuBus
 
 	public Ppu? Ppu;
 	public Cartridge? Cartridge = null;
+	public Controller? Controller = null;
 
 	public CpuBus()
 	{
@@ -28,7 +29,9 @@ internal sealed class CpuBus
 			>= 0x1800 and < 0x2000 => _ram[address - 0x1800],
 			>= 0x2000 and < 0x4000 => Ppu?.ReadReg(((address - 0x2000) % 8) + 0x2000) ?? 0xFF,
 			0x4014 => Ppu?.ReadReg(0x4014) ?? 0xFF,
-			0x4016 or 0x4018 => 0,
+			0x4016 => Controller?.CpuReadByte(address) ?? 0,
+			0x4017 => 0,
+			0x4018 => 0,
 			_ => 0xFF
 		};
 
@@ -47,6 +50,7 @@ internal sealed class CpuBus
 			case 0x1800 and < 0x2000: _ram[address - 0x1800] = value; break;
 			case >= 0x2000 and < 0x4000: Ppu?.WriteReg(((address - 0x2000) % 8) + 0x2000, value); break;
 			case 0x4014: Ppu?.WriteReg(0x4014, value); break;
+			case 0x4016: Controller?.CpuWriteByte(address, value); break;
 		}
 	}
 }
