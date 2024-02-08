@@ -1,5 +1,6 @@
 ﻿using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Text;
 
 namespace NesEmu;
 
@@ -725,8 +726,8 @@ internal sealed class Cpu
 			if (_nmi)
 			{
 				_nmi = false;
-				PushByte((byte)((_regPc + 2) >> 8));
-				PushByte((byte)((_regPc + 2) & 0xFF));
+				PushByte((byte)(_regPc >> 8));
+				PushByte((byte)(_regPc & 0xFF));
 				PushByte(RegStatus);
 				_fetchLow = ReadByte(0xFFFA);
 				_fetchHigh = ReadByte(0xFFFB);
@@ -814,7 +815,7 @@ internal sealed class Cpu
 			case Instruction.IllSlo: ExecuteInstIllSlo(); break;
 			case Instruction.IllSre: ExecuteInstIllSre(); break;
 			default:
-				throw new NotImplementedException();
+				throw new NotImplementedException($"Opcode 0x{_currentOpcode:X2} not recognized.");
 		}
 
 		_cycles++;
