@@ -1,12 +1,9 @@
-﻿using RenderThing.Bindings.Gl;
+﻿using Microsoft.Win32;
+using RenderThing.Bindings.Gl;
 using System.Diagnostics;
+using System.Net;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
-using System.Runtime.Intrinsics.Arm;
-using System.Runtime.Intrinsics.X86;
-using System.Security.Cryptography;
 using System.Text;
-using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace NesEmu;
 
@@ -147,6 +144,8 @@ internal sealed class Cpu
 		};
 	}
 
+	#region Instructions
+
 	private readonly InstructionInfo[] _instructions =
 	[
 		// 0x00 - 0x0F
@@ -176,13 +175,13 @@ internal sealed class Cpu
 		new(Instruction.Asl, "ASL", AddressingMode.ZeropageXIndexed, InstructionType.ReadModifyWrite),
 		new(Instruction.IllSlo, "*SLO", AddressingMode.ZeropageXIndexed, InstructionType.ReadModifyWrite),
 		new(Instruction.Clc, "CLC", AddressingMode.Implied, InstructionType.Implied),
-		new(Instruction.Ora, "ORA", AddressingMode.AbsoluteYIndexed),
+		new(Instruction.Ora, "ORA", AddressingMode.AbsoluteYIndexed, InstructionType.Read),
 		new(Instruction.Nop, "*NOP", AddressingMode.Implied, InstructionType.Implied),
-		new(Instruction.IllSlo, "*SLO", AddressingMode.AbsoluteYIndexed),
-		new(Instruction.Nop, "*NOP", AddressingMode.AbsoluteXIndexed),
-		new(Instruction.Ora, "ORA", AddressingMode.AbsoluteXIndexed),
-		new(Instruction.Asl, "ASL", AddressingMode.AbsoluteXIndexed),
-		new(Instruction.IllSlo, "*SLO", AddressingMode.AbsoluteXIndexed),
+		new(Instruction.IllSlo, "*SLO", AddressingMode.AbsoluteYIndexed, InstructionType.ReadModifyWrite),
+		new(Instruction.Nop, "*NOP", AddressingMode.AbsoluteXIndexed, InstructionType.Read),
+		new(Instruction.Ora, "ORA", AddressingMode.AbsoluteXIndexed, InstructionType.Read),
+		new(Instruction.Asl, "ASL", AddressingMode.AbsoluteXIndexed, InstructionType.ReadModifyWrite),
+		new(Instruction.IllSlo, "*SLO", AddressingMode.AbsoluteXIndexed, InstructionType.ReadModifyWrite),
 		// 0x20 - 0x2F
 		new(Instruction.Jsr, "JSR", AddressingMode.Absolute, InstructionType.InstJsr),
 		new(Instruction.And, "AND", AddressingMode.XIndexedIndirect),
@@ -210,13 +209,13 @@ internal sealed class Cpu
 		new(Instruction.Rol, "ROL", AddressingMode.ZeropageXIndexed, InstructionType.ReadModifyWrite),
 		new(Instruction.IllRla, "*RLA", AddressingMode.ZeropageXIndexed, InstructionType.ReadModifyWrite),
 		new(Instruction.Sec, "SEC", AddressingMode.Implied, InstructionType.Implied),
-		new(Instruction.And, "AND", AddressingMode.AbsoluteYIndexed),
+		new(Instruction.And, "AND", AddressingMode.AbsoluteYIndexed, InstructionType.Read),
 		new(Instruction.Nop, "*NOP", AddressingMode.Implied, InstructionType.Implied),
-		new(Instruction.IllRla, "*RLA", AddressingMode.AbsoluteYIndexed),
-		new(Instruction.Nop, "*NOP", AddressingMode.AbsoluteXIndexed),
-		new(Instruction.And, "AND", AddressingMode.AbsoluteXIndexed),
-		new(Instruction.Rol, "ROL", AddressingMode.AbsoluteXIndexed),
-		new(Instruction.IllRla, "*RLA", AddressingMode.AbsoluteXIndexed),
+		new(Instruction.IllRla, "*RLA", AddressingMode.AbsoluteYIndexed, InstructionType.ReadModifyWrite),
+		new(Instruction.Nop, "*NOP", AddressingMode.AbsoluteXIndexed, InstructionType.Read),
+		new(Instruction.And, "AND", AddressingMode.AbsoluteXIndexed, InstructionType.Read),
+		new(Instruction.Rol, "ROL", AddressingMode.AbsoluteXIndexed, InstructionType.ReadModifyWrite),
+		new(Instruction.IllRla, "*RLA", AddressingMode.AbsoluteXIndexed, InstructionType.ReadModifyWrite),
 		// 0x40 - 0x4F
 		new(Instruction.Rti, "RTI", AddressingMode.Implied, InstructionType.Stack),
 		new(Instruction.Eor, "EOR", AddressingMode.XIndexedIndirect),
@@ -244,13 +243,13 @@ internal sealed class Cpu
 		new(Instruction.Lsr, "LSR", AddressingMode.ZeropageXIndexed, InstructionType.ReadModifyWrite),
 		new(Instruction.IllSre, "*SRE", AddressingMode.ZeropageXIndexed, InstructionType.ReadModifyWrite),
 		new(Instruction.Cli, "CLI", AddressingMode.Implied, InstructionType.Implied),
-		new(Instruction.Eor, "EOR", AddressingMode.AbsoluteYIndexed),
+		new(Instruction.Eor, "EOR", AddressingMode.AbsoluteYIndexed, InstructionType.Read),
 		new(Instruction.Nop, "*NOP", AddressingMode.Implied, InstructionType.Implied),
-		new(Instruction.IllSre, "*SRE", AddressingMode.AbsoluteYIndexed),
-		new(Instruction.Nop, "*NOP", AddressingMode.AbsoluteXIndexed),
-		new(Instruction.Eor, "EOR", AddressingMode.AbsoluteXIndexed),
-		new(Instruction.Lsr, "LSR", AddressingMode.AbsoluteXIndexed),
-		new(Instruction.IllSre, "*SRE", AddressingMode.AbsoluteXIndexed),
+		new(Instruction.IllSre, "*SRE", AddressingMode.AbsoluteYIndexed, InstructionType.ReadModifyWrite),
+		new(Instruction.Nop, "*NOP", AddressingMode.AbsoluteXIndexed, InstructionType.Read),
+		new(Instruction.Eor, "EOR", AddressingMode.AbsoluteXIndexed, InstructionType.Read),
+		new(Instruction.Lsr, "LSR", AddressingMode.AbsoluteXIndexed, InstructionType.ReadModifyWrite),
+		new(Instruction.IllSre, "*SRE", AddressingMode.AbsoluteXIndexed, InstructionType.ReadModifyWrite),
 		// 0x60 - 0x6F
 		new(Instruction.Rts, "RTS", AddressingMode.Implied, InstructionType.Stack),
 		new(Instruction.Adc, "ADC", AddressingMode.XIndexedIndirect),
@@ -278,13 +277,13 @@ internal sealed class Cpu
 		new(Instruction.Ror, "ROR", AddressingMode.ZeropageXIndexed, InstructionType.ReadModifyWrite),
 		new(Instruction.IllRra, "*RRA", AddressingMode.ZeropageXIndexed, InstructionType.ReadModifyWrite),
 		new(Instruction.Sei, "SEI", AddressingMode.Implied, InstructionType.Implied),
-		new(Instruction.Adc, "ADC", AddressingMode.AbsoluteYIndexed),
+		new(Instruction.Adc, "ADC", AddressingMode.AbsoluteYIndexed, InstructionType.Read),
 		new(Instruction.Nop, "*NOP", AddressingMode.Implied, InstructionType.Implied),
-		new(Instruction.IllRra, "*RRA", AddressingMode.AbsoluteYIndexed),
-		new(Instruction.Nop, "*NOP", AddressingMode.AbsoluteXIndexed),
-		new(Instruction.Adc, "ADC", AddressingMode.AbsoluteXIndexed),
-		new(Instruction.Ror, "ROR", AddressingMode.AbsoluteXIndexed),
-		new(Instruction.IllRra, "*RRA", AddressingMode.AbsoluteXIndexed),
+		new(Instruction.IllRra, "*RRA", AddressingMode.AbsoluteYIndexed, InstructionType.ReadModifyWrite),
+		new(Instruction.Nop, "*NOP", AddressingMode.AbsoluteXIndexed, InstructionType.Read),
+		new(Instruction.Adc, "ADC", AddressingMode.AbsoluteXIndexed, InstructionType.Read),
+		new(Instruction.Ror, "ROR", AddressingMode.AbsoluteXIndexed, InstructionType.ReadModifyWrite),
+		new(Instruction.IllRra, "*RRA", AddressingMode.AbsoluteXIndexed, InstructionType.ReadModifyWrite),
 		// 0x80 - 0x8F
 		new(Instruction.Nop, "*NOP", AddressingMode.Immediate),
 		new(Instruction.Sta, "STA", AddressingMode.XIndexedIndirect),
@@ -312,13 +311,13 @@ internal sealed class Cpu
 		new(Instruction.Stx, "STX", AddressingMode.ZeropageYIndexed, InstructionType.Write),
 		new(Instruction.IllSax, "*SAX", AddressingMode.ZeropageYIndexed, InstructionType.Write),
 		new(Instruction.Tya, "TYA", AddressingMode.Implied, InstructionType.Implied),
-		new(Instruction.Sta, "STA", AddressingMode.AbsoluteYIndexed),
+		new(Instruction.Sta, "STA", AddressingMode.AbsoluteYIndexed, InstructionType.Write),
 		new(Instruction.Txs, "TXS", AddressingMode.Implied, InstructionType.Implied),
-		new(Instruction.Unknown, "*TAS", AddressingMode.AbsoluteXIndexed),
-		new(Instruction.Unknown, "*SHY", AddressingMode.AbsoluteXIndexed),
-		new(Instruction.Sta, "STA", AddressingMode.AbsoluteXIndexed),
-		new(Instruction.Unknown, "*SHX", AddressingMode.AbsoluteYIndexed),
-		new(Instruction.Unknown, "*SHA", AddressingMode.AbsoluteYIndexed),
+		new(Instruction.Unknown, "*TAS", AddressingMode.AbsoluteXIndexed, InstructionType.Write),
+		new(Instruction.Unknown, "*SHY", AddressingMode.AbsoluteXIndexed, InstructionType.Write),
+		new(Instruction.Sta, "STA", AddressingMode.AbsoluteXIndexed, InstructionType.Write),
+		new(Instruction.Unknown, "*SHX", AddressingMode.AbsoluteYIndexed, InstructionType.Write),
+		new(Instruction.Unknown, "*SHA", AddressingMode.AbsoluteYIndexed, InstructionType.Write),
 		// 0xA0 - 0xAF
 		new(Instruction.Ldy, "LDY", AddressingMode.Immediate),
 		new(Instruction.Lda, "LDA", AddressingMode.XIndexedIndirect),
@@ -346,13 +345,13 @@ internal sealed class Cpu
 		new(Instruction.Ldx, "LDX", AddressingMode.ZeropageYIndexed, InstructionType.Read),
 		new(Instruction.IllLax, "*LAX", AddressingMode.ZeropageYIndexed, InstructionType.Read),
 		new(Instruction.Clv, "CLV", AddressingMode.Implied, InstructionType.Implied),
-		new(Instruction.Lda, "LDA", AddressingMode.AbsoluteYIndexed),
+		new(Instruction.Lda, "LDA", AddressingMode.AbsoluteYIndexed, InstructionType.Read),
 		new(Instruction.Tsx, "TSX", AddressingMode.Implied, InstructionType.Implied),
-		new(Instruction.Unknown, "*LAS", AddressingMode.AbsoluteYIndexed),
-		new(Instruction.Ldy, "LDY", AddressingMode.AbsoluteXIndexed),
-		new(Instruction.Lda, "LDA", AddressingMode.AbsoluteXIndexed),
-		new(Instruction.Ldx, "LDX", AddressingMode.AbsoluteYIndexed),
-		new(Instruction.IllLax, "*LAX", AddressingMode.AbsoluteYIndexed),
+		new(Instruction.Unknown, "*LAS", AddressingMode.AbsoluteYIndexed, InstructionType.Read),
+		new(Instruction.Ldy, "LDY", AddressingMode.AbsoluteXIndexed, InstructionType.Read),
+		new(Instruction.Lda, "LDA", AddressingMode.AbsoluteXIndexed, InstructionType.Read),
+		new(Instruction.Ldx, "LDX", AddressingMode.AbsoluteYIndexed, InstructionType.Read),
+		new(Instruction.IllLax, "*LAX", AddressingMode.AbsoluteYIndexed, InstructionType.Read),
 		// 0xC0 - 0xCF
 		new(Instruction.Cpy, "CPY", AddressingMode.Immediate),
 		new(Instruction.Cmp, "CMP", AddressingMode.XIndexedIndirect),
@@ -380,13 +379,13 @@ internal sealed class Cpu
 		new(Instruction.Dec, "DEC", AddressingMode.ZeropageXIndexed, InstructionType.ReadModifyWrite),
 		new(Instruction.IllDcp, "*DCP", AddressingMode.ZeropageXIndexed, InstructionType.ReadModifyWrite),
 		new(Instruction.Cld, "CLD", AddressingMode.Implied, InstructionType.Implied),
-		new(Instruction.Cmp, "CMP", AddressingMode.AbsoluteYIndexed),
+		new(Instruction.Cmp, "CMP", AddressingMode.AbsoluteYIndexed, InstructionType.Read),
 		new(Instruction.Nop, "*NOP", AddressingMode.Implied, InstructionType.Implied),
-		new(Instruction.IllDcp, "*DCP", AddressingMode.AbsoluteYIndexed),
-		new(Instruction.Nop, "*NOP", AddressingMode.AbsoluteXIndexed),
-		new(Instruction.Cmp, "CMP", AddressingMode.AbsoluteXIndexed),
-		new(Instruction.Dec, "DEC", AddressingMode.AbsoluteXIndexed),
-		new(Instruction.IllDcp, "*DCP", AddressingMode.AbsoluteXIndexed),
+		new(Instruction.IllDcp, "*DCP", AddressingMode.AbsoluteYIndexed, InstructionType.ReadModifyWrite),
+		new(Instruction.Nop, "*NOP", AddressingMode.AbsoluteXIndexed, InstructionType.Read),
+		new(Instruction.Cmp, "CMP", AddressingMode.AbsoluteXIndexed, InstructionType.Read),
+		new(Instruction.Dec, "DEC", AddressingMode.AbsoluteXIndexed, InstructionType.ReadModifyWrite),
+		new(Instruction.IllDcp, "*DCP", AddressingMode.AbsoluteXIndexed, InstructionType.ReadModifyWrite),
 		// 0xE0 - 0xEF
 		new(Instruction.Cpx, "CPX", AddressingMode.Immediate),
 		new(Instruction.Sbc, "SBC", AddressingMode.XIndexedIndirect),
@@ -414,14 +413,18 @@ internal sealed class Cpu
 		new(Instruction.Inc, "INC", AddressingMode.ZeropageXIndexed, InstructionType.ReadModifyWrite),
 		new(Instruction.IllIsc, "*ISC", AddressingMode.ZeropageXIndexed, InstructionType.ReadModifyWrite),
 		new(Instruction.Sed, "SED", AddressingMode.Implied, InstructionType.Implied),
-		new(Instruction.Sbc, "SBC", AddressingMode.AbsoluteYIndexed),
+		new(Instruction.Sbc, "SBC", AddressingMode.AbsoluteYIndexed, InstructionType.Read),
 		new(Instruction.Nop, "*NOP", AddressingMode.Implied, InstructionType.Implied),
-		new(Instruction.IllIsc, "*ISC", AddressingMode.AbsoluteYIndexed),
-		new(Instruction.Nop, "*NOP", AddressingMode.AbsoluteXIndexed),
-		new(Instruction.Sbc, "SBC", AddressingMode.AbsoluteXIndexed),
-		new(Instruction.Inc, "INC", AddressingMode.AbsoluteXIndexed),
-		new(Instruction.IllIsc, "*ISC", AddressingMode.AbsoluteXIndexed)
+		new(Instruction.IllIsc, "*ISC", AddressingMode.AbsoluteYIndexed, InstructionType.ReadModifyWrite),
+		new(Instruction.Nop, "*NOP", AddressingMode.AbsoluteXIndexed, InstructionType.Read),
+		new(Instruction.Sbc, "SBC", AddressingMode.AbsoluteXIndexed, InstructionType.Read),
+		new(Instruction.Inc, "INC", AddressingMode.AbsoluteXIndexed, InstructionType.ReadModifyWrite),
+		new(Instruction.IllIsc, "*ISC", AddressingMode.AbsoluteXIndexed, InstructionType.ReadModifyWrite)
 	];
+
+	#endregion
+
+	#region Registers
 
 	private ushort _regPc;
 	private byte _regSpLo;
@@ -429,6 +432,11 @@ internal sealed class Cpu
 	private byte _regA;
 	private byte _regX;
 	private byte _regY;
+	private ushort RegSp => (ushort)((_regSpHi << 8) | _regSpLo);
+
+	#endregion
+
+	#region Flags
 
 	private bool _flagCarry;
 	private bool _flagZero;
@@ -438,7 +446,7 @@ internal sealed class Cpu
 	private bool _flagOverflow;
 	private bool _flagNegative;
 
-	private ushort RegSp => (ushort)((_regSpHi << 8) | _regSpLo);
+	#endregion
 
 	public readonly CpuBus Bus;
 
@@ -519,7 +527,7 @@ internal sealed class Cpu
 	private byte FetchByte() => ReadByte(_regPc++);
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	private void PushByteOld(byte value)
+	private void PushByte(byte value)
 	{
 		WriteByte(RegSp, value);
 		_regSpLo--;
@@ -529,44 +537,6 @@ internal sealed class Cpu
 	{
 		switch (CurrentAddressingMode)
 		{
-			case AddressingMode.AbsoluteXIndexed: // 1 added cycle
-				{
-					switch (_fetchStep)
-					{
-						case 0:
-							_fetchLow = FetchByte();
-							_fetchStep++;
-							return false;
-						case 1:
-							_fetchHigh = FetchByte();
-							_fetchedAddress = (ushort)((_fetchHigh << 8) | _fetchLow);
-							_pageBoundaryCrossed = (_fetchedAddress & 0xFF00) != ((_fetchedAddress + _regX) & 0xFF00);
-							_fetchedAddress += _regX;
-							_fetchStep = 0;
-							return true;
-						default:
-							throw new UnreachableException();
-					}
-				}
-			case AddressingMode.AbsoluteYIndexed: // 1 added cycle
-				{
-					switch (_fetchStep)
-					{
-						case 0:
-							_fetchLow = FetchByte();
-							_fetchStep++;
-							return false;
-						case 1:
-							_fetchHigh = FetchByte();
-							_fetchedAddress = (ushort)((_fetchHigh << 8) | _fetchLow);
-							_pageBoundaryCrossed = (_fetchedAddress & 0xFF00) != ((_fetchedAddress + _regY) & 0xFF00);
-							_fetchedAddress += _regY;
-							_fetchStep = 0;
-							return true;
-						default:
-							throw new UnreachableException();
-					}
-				}
 			case AddressingMode.Indirect: // 3 added cycles
 				{
 					switch (_fetchStep)
@@ -667,6 +637,7 @@ internal sealed class Cpu
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	private void WriteMemoryOperand() => WriteByte(_fetchedAddress, _fetchOperand);
 
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	private string DisassembleNext()
 	{
 		var inst = _instructions[_currentOpcode];
@@ -700,9 +671,9 @@ internal sealed class Cpu
 			if (_nmi)
 			{
 				_nmi = false;
-				PushByteOld((byte)(_regPc >> 8));
-				PushByteOld((byte)(_regPc & 0xFF));
-				PushByteOld(RegStatus);
+				PushByte((byte)(_regPc >> 8));
+				PushByte((byte)(_regPc & 0xFF));
+				PushByte(RegStatus);
 				_fetchLow = ReadByte(0xFFFA);
 				_fetchHigh = ReadByte(0xFFFB);
 				_regPc = (ushort)((_fetchHigh << 8) | _fetchLow);
@@ -733,6 +704,8 @@ internal sealed class Cpu
 			case AddressingMode.Zeropage: ExecuteAddrZeropage(); break;
 			case AddressingMode.ZeropageXIndexed: ExecuteAddrZeropageIndexed(); break;
 			case AddressingMode.ZeropageYIndexed: ExecuteAddrZeropageIndexed(); break;
+			case AddressingMode.AbsoluteXIndexed: ExecuteAddrAbsoluteIndexed(); break;
+			case AddressingMode.AbsoluteYIndexed: ExecuteAddrAbsoluteIndexed(); break;
 			default:
 				switch (CurrentInstruction)
 				{
@@ -1132,6 +1105,8 @@ internal sealed class Cpu
 						break;
 				}
 				break;
+			default:
+				throw new UnreachableException();
 		}
 	}
 
@@ -1259,6 +1234,182 @@ internal sealed class Cpu
 						break;
 				}
 				break;
+			default:
+				throw new UnreachableException();
+		}
+	}
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	private void ExecuteAddrAbsoluteIndexed()
+	{
+		var index = CurrentAddressingMode switch
+		{
+			AddressingMode.AbsoluteXIndexed => _regX,
+			AddressingMode.AbsoluteYIndexed => _regY,
+			_ => throw new UnreachableException()
+		};
+
+		switch (CurrentInstructionType)
+		{
+			case InstructionType.Read:
+				switch (_step)
+				{
+					case 0: // fetch opcode, increment PC
+						_step++;
+						break;
+					case 1: // fetch low byte of address, increment PC
+						_fetchLow = FetchByte();
+						_step++;
+						break;
+					case 2: // fetch high byte of address, add index register to low address byte, increment PC
+						_fetchHigh = FetchByte();
+						var oldLow = _fetchLow;
+						_fetchLow += index;
+						_pageBoundaryCrossed = oldLow + index != _fetchLow;
+						_step++;
+						break;
+					case 3: // read from effective address, fix the high byte of effective address
+						_fetchedAddress = (ushort)((_fetchHigh << 8) | _fetchLow);
+
+						// If page boundary was not crossed, do not incur penalty cycle, address is correct
+						//  and will only be read once immediately in this cycle, finishing the instruction
+						if (!_pageBoundaryCrossed)
+
+							goto case 4;
+
+						// If page boundary was crossed, read from incorrect address,
+						//  fix the high byte and incur a penalty cycle
+						ReadByte(_fetchedAddress);
+
+						_fetchHigh++;
+						_fetchedAddress = (ushort)((_fetchHigh << 8) | _fetchLow);
+
+						_step++;
+						break;
+					case 4: // re-read from effective address
+						var value = ReadByte(_fetchedAddress);
+						switch (CurrentInstruction)
+						{
+							case Instruction.Adc: ExecuteOpAdc(value); break;
+							case Instruction.And: ExecuteOpAnd(value); break;
+							case Instruction.Bit: ExecuteOpBit(value); break;
+							case Instruction.Cmp: ExecuteOpCmp(value); break;
+							case Instruction.Cpx: ExecuteOpCpx(value); break;
+							case Instruction.Cpy: ExecuteOpCpy(value); break;
+							case Instruction.Eor: ExecuteOpEor(value); break;
+							case Instruction.Lda: ExecuteOpLda(value); break;
+							case Instruction.Ldx: ExecuteOpLdx(value); break;
+							case Instruction.Ldy: ExecuteOpLdy(value); break;
+							case Instruction.Nop: break;
+							case Instruction.Ora: ExecuteOpOra(value); break;
+							case Instruction.Sbc: ExecuteOpSbc(value); break;
+							// TODO: case Instruction.IllLas: ExecuteOpLas(value); break;
+							case Instruction.IllLax: ExecuteOpIllLax(value); break;
+								// TODO: case Instruction.IllShs: ExecuteOpShs(value); break;
+						}
+						_step = 0;
+						break;
+				}
+				break;
+			case InstructionType.ReadModifyWrite:
+				switch (_step)
+				{
+					case 0: // fetch opcode, increment PC
+						_step++;
+						break;
+					case 1: // fetch low byte of address, increment PC
+						_fetchLow = FetchByte();
+						_step++;
+						break;
+					case 2: // fetch high byte of address, add index register X to low address byte, increment PC
+						_fetchHigh = FetchByte();
+						var oldLow = _fetchLow;
+						_fetchLow += index;
+						_pageBoundaryCrossed = oldLow + index != _fetchLow;
+						_step++;
+						break;
+					case 3: // read from effective address, fix the high byte of effective address
+						_fetchedAddress = (ushort)((_fetchHigh << 8) | _fetchLow);
+						ReadByte(_fetchedAddress);
+
+						if (_pageBoundaryCrossed)
+							_fetchHigh++;
+
+						_step++;
+						break;
+					case 4:
+						_fetchedAddress = (ushort)((_fetchHigh << 8) | _fetchLow);
+						_fetchOperand = ReadByte(_fetchedAddress);
+						_step++;
+						break;
+					case 5: // write the value back to effective address, and do the operation on it
+						WriteByte(_fetchedAddress, _fetchOperand);
+						switch (CurrentInstruction)
+						{
+							case Instruction.Asl: ExecuteOpAsl(ref _fetchOperand); break;
+							case Instruction.Dec: ExecuteOpDec(ref _fetchOperand); break;
+							case Instruction.Inc: ExecuteOpInc(ref _fetchOperand); break;
+							case Instruction.Lsr: ExecuteOpLsr(ref _fetchOperand); break;
+							case Instruction.Rol: ExecuteOpRol(ref _fetchOperand); break;
+							case Instruction.Ror: ExecuteOpRor(ref _fetchOperand); break;
+							case Instruction.IllDcp: ExecuteOpIllDcp(ref _fetchOperand); break;
+							case Instruction.IllIsc: ExecuteOpIllIsc(ref _fetchOperand); break;
+							case Instruction.IllRla: ExecuteOpIllRla(ref _fetchOperand); break;
+							case Instruction.IllRra: ExecuteOpIllRra(ref _fetchOperand); break;
+							case Instruction.IllSlo: ExecuteOpIllSlo(ref _fetchOperand); break;
+							case Instruction.IllSre: ExecuteOpIllSre(ref _fetchOperand); break;
+						}
+						_step++;
+						break;
+					case 6: // write the new value to effective address
+						WriteByte(_fetchedAddress, _fetchOperand);
+						_step = 0;
+						break;
+				}
+				break;
+			case InstructionType.Write:
+				switch (_step)
+				{
+					case 0: // fetch opcode, increment PC
+						_step++;
+						break;
+					case 1: // fetch low byte of address, increment PC
+						_fetchLow = FetchByte();
+						_step++;
+						break;
+					case 2: // fetch high byte of address, add index register to low address byte, increment PC
+						_fetchHigh = FetchByte();
+						var oldLow = _fetchLow;
+						_fetchLow += index;
+						_pageBoundaryCrossed = oldLow + index != _fetchLow;
+						_step++;
+						break;
+					case 3: // read from effective address, fix the high byte of effective address
+						_fetchedAddress = (ushort)((_fetchHigh << 8) | _fetchLow);
+						ReadByte(_fetchedAddress);
+
+						if (_pageBoundaryCrossed)
+							_fetchHigh++;
+
+						_step++;
+						break;
+					case 4: // write to effective address
+						_fetchedAddress = (ushort)((_fetchHigh << 8) | _fetchLow);
+						switch (CurrentInstruction)
+						{
+							case Instruction.Sta: WriteByte(_fetchedAddress, ExecuteOpSta()); break;
+							case Instruction.Stx: WriteByte(_fetchedAddress, ExecuteOpStx()); break;
+							case Instruction.Sty: WriteByte(_fetchedAddress, ExecuteOpSty()); break;
+								// TODO: case Instruction.IllSha: WriteByte(_fetchedAddress, ExecuteOpIllSha()); break;
+								// TODO: case Instruction.IllShx: WriteByte(_fetchedAddress, ExecuteOpIllShx()); break;
+								// TODO: case Instruction.IllShy: WriteByte(_fetchedAddress, ExecuteOpIllShy()); break;
+						}
+						_step = 0;
+						break;
+				}
+				break;
+			default:
+				throw new UnreachableException();
 		}
 	}
 
