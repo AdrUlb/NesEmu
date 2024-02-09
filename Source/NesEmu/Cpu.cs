@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Security.Cryptography;
 using System.Text;
 
 namespace NesEmu;
@@ -703,21 +704,22 @@ internal sealed class Cpu
 			case AddressingMode.ZeropageYIndexed: ExecuteAddrZeropageIndexed(); break;
 			case AddressingMode.AbsoluteXIndexed: ExecuteAddrAbsoluteIndexed(); break;
 			case AddressingMode.AbsoluteYIndexed: ExecuteAddrAbsoluteIndexed(); break;
+			case AddressingMode.Relative: ExecuteAddrRelative(); break;
 			default:
 				switch (CurrentInstruction)
 				{
 					case Instruction.Adc: ExecuteInstAdc(); break;
 					case Instruction.And: ExecuteInstAnd(); break;
 					case Instruction.Asl: ExecuteInstAsl(); break;
-					case Instruction.Bcc: ExecuteInstBcc(); break;
-					case Instruction.Bcs: ExecuteInstBcs(); break;
-					case Instruction.Beq: ExecuteInstBeq(); break;
+					//case Instruction.Bcc: ExecuteInstBcc(); break;
+					//case Instruction.Bcs: ExecuteInstBcs(); break;
+					//case Instruction.Beq: ExecuteInstBeq(); break;
 					case Instruction.Bit: ExecuteInstBit(); break;
-					case Instruction.Bmi: ExecuteInstBmi(); break;
-					case Instruction.Bne: ExecuteInstBne(); break;
-					case Instruction.Bpl: ExecuteInstBpl(); break;
-					case Instruction.Bvc: ExecuteInstBvc(); break;
-					case Instruction.Bvs: ExecuteInstBvs(); break;
+					//case Instruction.Bmi: ExecuteInstBmi(); break;
+					//case Instruction.Bne: ExecuteInstBne(); break;
+					//case Instruction.Bpl: ExecuteInstBpl(); break;
+					//case Instruction.Bvc: ExecuteInstBvc(); break;
+					//case Instruction.Bvs: ExecuteInstBvs(); break;
 					case Instruction.Cmp: ExecuteInstCmp(); break;
 					case Instruction.Cpx: ExecuteInstCpx(); break;
 					case Instruction.Cpy: ExecuteInstCpy(); break;
@@ -1407,6 +1409,55 @@ internal sealed class Cpu
 				break;
 			default:
 				throw new UnreachableException();
+		}
+	}
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	private void ExecuteAddrRelative()
+	{
+		var condition = CurrentInstruction switch
+		{
+			Instruction.Bcc => !_flagCarry,
+			Instruction.Bcs => _flagCarry,
+			Instruction.Bmi => _flagNegative,
+			Instruction.Beq => _flagZero,
+			Instruction.Bne => !_flagZero,
+			Instruction.Bpl => !_flagNegative,
+			Instruction.Bvc => !_flagOverflow,
+			Instruction.Bvs => _flagOverflow,
+			_ => throw new UnreachableException()
+		};
+
+		switch (_step)
+		{
+			case 0: // fetch opcode, increment PC
+				_step++;
+				break;
+			case 1: // fetch operand, increment PC
+				_fetchOperand = FetchByte();
+				if (!condition)
+				{
+					_step = 0;
+					break;
+				}
+				_step++;
+				break;
+			case 2: // Fetch opcode of next instruction, If branch is taken, add operand to PCL. Otherwise increment PC.
+				var oldPc = _regPc;
+				_regPc = (ushort)(_regPc + (sbyte)_fetchOperand);
+
+				if ((oldPc & 0xFF00) == (_regPc & 0xFF00)) // If not crossing page boundary, this is the end
+				{
+					_step = 0;
+					break;
+				}
+
+				_step++;
+				break;
+			case 3: // Fetch opcode of next instruction. Fix PCH. If it did not change, increment PC.
+				// PCH was never "broken", there is no point in "unfixing" it in cycle 3 so we can fix it again here, so just do nothing
+				_step = 0;
+				break;
 		}
 	}
 
@@ -3453,7 +3504,6 @@ internal sealed class Cpu
 				break;
 			default:
 				throw new UnreachableException();
-
 		}
 	}
 
