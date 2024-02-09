@@ -1,7 +1,4 @@
-﻿using Microsoft.Win32;
-using RenderThing.Bindings.Gl;
 using System.Diagnostics;
-using System.Net;
 using System.Runtime.CompilerServices;
 using System.Text;
 
