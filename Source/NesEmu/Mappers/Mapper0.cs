@@ -15,6 +15,10 @@ internal sealed class Mapper0 : Mapper
 	{
 		_prgRom = new byte[prgRomSize];
 		_chrRom = new byte[chrRomSize];
+
+		if (prgRomSize is not 0x4000 and not 0x8000)
+			throw new NotSupportedException($"Program ROM size {prgRomSize} bytes invalid.");
+
 		_mirroringMode = mirroringMode;
 
 		data.ReadExactly(_prgRom);
@@ -40,7 +44,7 @@ internal sealed class Mapper0 : Mapper
 	public override byte CpuReadByte(ushort address) => address switch
 	{
 		>= 0x8000 and < 0xC000 => _prgRom[address - 0x8000],
-		>= 0xC000 => _prgRom[address - 0xC000],
+		>= 0xC000 => _prgRom[address - (_prgRom.Length == 0x4000 ? 0xC000 : 0x8000)],
 		_ => 0xFF,
 	};
 

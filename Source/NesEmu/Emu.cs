@@ -29,7 +29,7 @@ internal sealed class Emu
 		Cpu.Bus.Ppu = Ppu;
 		Cpu.Bus.Controller = Controller;
 
-		using (var fs = File.OpenRead(@"C:\Stuff\Roms\NES\pacman.nes"))
+		using (var fs = File.OpenRead(@"C:\Stuff\Roms\NES\nestest.nes"))
 		{
 			var cart = new Cartridge(Ppu, fs);
 			Cpu.Bus.Cartridge = cart;
@@ -60,7 +60,7 @@ internal sealed class Emu
 				}
 
 				Cpu.Tick();
-				Ppu.Ticks(3);
+				//Ppu.Ticks(3);
 			}
 
 			/*long thisTime;
@@ -71,8 +71,8 @@ internal sealed class Emu
 			while (thisTime - lastTime < _ticksPerFrame);
 			lastTime = thisTime;*/
 
-			Console.WriteLine($"Frame took {sw.Elapsed.TotalMilliseconds}ms");
-			sw.Restart();
+			//Console.WriteLine($"Frame took {sw.Elapsed.TotalMilliseconds}ms");
+			//sw.Restart();
 		}
 	}
 
