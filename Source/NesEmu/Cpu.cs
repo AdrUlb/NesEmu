@@ -1,8 +1,5 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using System.Security.Cryptography;
-using System.Text;
-using System.Text.RegularExpressions;
 
 namespace NesEmu;
 
@@ -451,7 +448,6 @@ internal sealed class Cpu
 
 	private byte _currentOpcode = 0;
 	private int _step = 0;
-	//private int _fetchStep = 0;
 	private int _cycles = 7;
 
 	private ushort _fetchAddress = 0;
@@ -497,7 +493,6 @@ internal sealed class Cpu
 	public void Reset()
 	{
 		_regPc = (ushort)((Bus.ReadByte(0xFFFD) << 8) | Bus.ReadByte(0xFFFC));
-		_regPc = 0xC000;
 		_regSpLo = 0xFD;
 
 		_flagNegative = false;
@@ -572,7 +567,7 @@ internal sealed class Cpu
 
 			_currentOpcode = FetchByte();
 
-			var sb = new StringBuilder();
+			/*var sb = new StringBuilder();
 			sb.Append($"{(ushort)(_regPc - 1):X4}  {_currentOpcode:X2}");
 			for (var i = 0; i < _operations[_currentOpcode].Bytes - 1; i++)
 				sb.Append($" {ReadByte((ushort)(_regPc + i)):X2}");
@@ -580,9 +575,7 @@ internal sealed class Cpu
 			sb.Append(DisassembleNext());
 			sb.Append(new string(' ', 48 - sb.Length));
 			sb.Append($"A:{_regA:X2} X:{_regX:X2} Y:{_regY:X2} P:{RegStatus:X2} SP:{_regSpLo:X2} CYC:{_cycles}");
-			Console.WriteLine(sb);
-			if (_cycles == 26554)
-				Environment.Exit(0);
+			Console.WriteLine(sb);*/
 		}
 
 		switch (CurrentOperation.AddressingMode)

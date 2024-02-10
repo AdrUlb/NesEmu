@@ -13,7 +13,7 @@ internal sealed class Emu
 	private readonly long _ticksPerFrame = (long)(Stopwatch.Frequency / _framesPerSecond);
 	private readonly long _cyclesPerFrame = (long)(_cyclesPerSecond / _framesPerSecond);
 
-	public event EventHandler? VblankInterrupt;
+	public event EventHandler? Vblank;
 	public readonly Cpu Cpu;
 	public readonly Ppu Ppu;
 	public readonly Controller Controller;
@@ -29,7 +29,7 @@ internal sealed class Emu
 		Cpu.Bus.Ppu = Ppu;
 		Cpu.Bus.Controller = Controller;
 
-		using (var fs = File.OpenRead(@"C:\Stuff\Roms\NES\nestest.nes"))
+		using (var fs = File.OpenRead(@"C:\Stuff\Roms\NES\tetris.nes"))
 		{
 			var cart = new Cartridge(Ppu, fs);
 			Cpu.Bus.Cartridge = cart;
@@ -56,20 +56,22 @@ internal sealed class Emu
 				{
 					Ppu.RequestVblankInterrupt = false;
 					Cpu.RequestNmi();
-					VblankInterrupt?.Invoke(this, EventArgs.Empty);
 				}
 
 				Cpu.Tick();
-				//Ppu.Ticks(3);
+				var wasVblank = Ppu.StatusVblank;
+				Ppu.Ticks(3);
+				if (!wasVblank && Ppu.StatusVblank)
+					Vblank?.Invoke(this, EventArgs.Empty);
 			}
 
-			/*long thisTime;
+			long thisTime;
 			do
 			{
 				thisTime = Stopwatch.GetTimestamp();
 			}
 			while (thisTime - lastTime < _ticksPerFrame);
-			lastTime = thisTime;*/
+			lastTime = thisTime;
 
 			//Console.WriteLine($"Frame took {sw.Elapsed.TotalMilliseconds}ms");
 			//sw.Restart();

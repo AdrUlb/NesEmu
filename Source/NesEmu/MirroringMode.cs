@@ -3,5 +3,7 @@
 internal enum MirroringMode
 {
 	Horizontal,
-	Vertical
+	Vertical,
+	OneScreenLowerBank,
+	OneScreenUpperBank
 }

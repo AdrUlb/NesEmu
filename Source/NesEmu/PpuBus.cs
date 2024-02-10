@@ -1,6 +1,4 @@
-﻿using System.Net;
-
-namespace NesEmu;
+﻿namespace NesEmu;
 
 // https://www.nesdev.org/wiki/PPU_memory_map
 internal sealed class PpuBus(Ppu ppu)
@@ -21,16 +19,31 @@ internal sealed class PpuBus(Ppu ppu)
 
 	public byte ReadByte(ushort address)
 	{
-		return address is >= 0x3F00 and < 0x4000
-			? _paletteRam[(address - 0x3F00) % 0x20]
-			: Cartridge?.PpuReadByte(_ppu, address) ?? 0xFF;
+		if (address is >= 0x3F00 and < 0x4000)
+		{
+			address -= 0x3F00;
+			address %= 0x20;
+
+			if (address == 0x10)
+				address = 0;
+
+			return _paletteRam[address];
+		}
+
+		return Cartridge?.PpuReadByte(_ppu, address) ?? 0xFF;
 	}
 
 	public void WriteByte(ushort address, byte value)
 	{
 		if (address is >= PaletteRamAddress and < 0x4000)
 		{
-			_paletteRam[(address - PaletteRamAddress) % 0x20] = value;
+			address -= 0x3F00;
+			address %= 0x20;
+
+			if (address == 0x10)
+				address = 0;
+
+			_paletteRam[address] = value;
 			return;
 		}
 

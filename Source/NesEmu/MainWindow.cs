@@ -15,7 +15,7 @@ internal class MainWindow : Window
 	{
 		Title = "Adrian's NES Emulator";
 		Size = new(256 * 2, 240 * 2);
-		_emu.VblankInterrupt += (_, _) => _waitForVblank = false;
+		_emu.Vblank += (_, _) => _waitForVblank = false;
 	}
 
 	protected override void OnCloseClicked()

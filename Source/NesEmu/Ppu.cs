@@ -34,17 +34,6 @@ internal sealed class Ppu
 	private byte _bgTileColumn;
 	private byte _bgTileRow;
 
-	private byte _fetchBgNametableByte;
-	private byte _fetchBgAttributeByte;
-	private byte _fetchBgPatternLow;
-	private byte _fetchBgPatternHigh;
-
-	private ushort _bgAttribute;
-	private ushort _bgPatternLow;
-	private ushort _bgPatternHigh;
-
-	private bool _statusVblank = false;
-
 	private int _nextPixelIndex = 0;
 
 	private readonly Color[] _palette = new Color[64];
@@ -52,6 +41,8 @@ internal sealed class Ppu
 
 	public readonly byte[] Vram = new byte[0x800];
 	public readonly Color[] Framebuffer = new Color[ScreenWidth * ScreenHeight];
+
+	public bool StatusVblank { get; private set; } = false;
 
 	public bool RequestVblankInterrupt { get; set; } = false;
 
@@ -84,7 +75,7 @@ internal sealed class Ppu
 	{
 		get => (byte)
 		(
-			((_statusVblank ? 1 : 0) << 7)
+			((StatusVblank ? 1 : 0) << 7)
 		);
 	}
 
@@ -117,11 +108,12 @@ internal sealed class Ppu
 			case 0x2007: // PPUDATA
 				{
 					byte ret;
-					if (_regAddr is >= 0x3F00 and < 0x4000) // no dummy read required for palette ram
+					if (_regAddr is >= 0x3F00 and < 0x4000) // Palette
 					{
 						ret = _regData = Bus.ReadByte(_regAddr);
+						_regData = Bus.ReadByte((ushort)(_regAddr - 0x1000));
 					}
-					else
+					else // VRAM
 					{
 						ret = _regData;
 						_regData = Bus.ReadByte(_regAddr);
@@ -164,7 +156,6 @@ internal sealed class Ppu
 				_regAddr = (ushort)((_regAddr << 8) | value);
 				break;
 			case 0x2007: // PPUDATA
-				_regData = value;
 				Bus.WriteByte(_regAddr, value);
 				if (_ctrlAddrIncrMode)
 				{
@@ -174,8 +165,14 @@ internal sealed class Ppu
 					_regAddr++;
 				break;
 			case 0x4014: // OAMDMA
+				var address = (ushort)(value << 8);
 				for (var i = 0; i < _oam.Length; i++)
-					_oam[i] = _cpuBus.ReadByte((ushort)((value << 8) + ((i + _oamAddr) & 0xFF)));
+				{
+					_oam[(_oamAddr + i) & 0xFF] = _cpuBus.ReadByte(address);
+					address++;
+					if ((address & 0xFF) == 0)
+						address -= 0x0100;
+				}
 				break;
 		}
 	}
@@ -192,7 +189,7 @@ internal sealed class Ppu
 	{
 		if (_cycle is >= 1 and <= 256)
 		{
-			FetchBackground();
+			_step++;
 
 			var screenX = _cycle - 1;
 			if (screenX is >= 0 and < ScreenWidth && _scanline < ScreenHeight)
@@ -204,13 +201,7 @@ internal sealed class Ppu
 			_bgTileColumn++;
 			if (_bgTileColumn >= _tileColumns)
 				_bgTileColumn = 0;
-			_bgAttribute >>= 8;
-			_bgPatternLow >>= 8;
-			_bgPatternHigh >>= 8;
 
-			_bgAttribute |= (ushort)(_fetchBgAttributeByte << 8);
-			_bgPatternLow |= (ushort)(_fetchBgPatternLow << 8);
-			_bgPatternHigh |= (ushort)(_fetchBgPatternHigh << 8);
 			_step = 0;
 		}
 
@@ -224,7 +215,7 @@ internal sealed class Ppu
 			switch (_scanline)
 			{
 				case 241: // End of visible scanlines
-					_statusVblank = true;
+					StatusVblank = true;
 					if (_ctrlEnableVblankNmi)
 						RequestVblankInterrupt = true;
 					break;
@@ -234,68 +225,10 @@ internal sealed class Ppu
 					_nextPixelIndex = 0;
 					_scanline = 0;
 					_bgTileRow = 0;
-					_statusVblank = false;
+					StatusVblank = false;
 					break;
 			}
 		}
-	}
-
-	private void FetchBackground()
-	{
-		var nametableAddress = _ctrlBaseNametableAddr switch
-		{
-			0 => PpuBus.Nametable0Address,
-			1 => PpuBus.Nametable1Address,
-			2 => PpuBus.Nametable2Address,
-			3 => PpuBus.Nametable3Address,
-			_ => throw new UnreachableException()
-		};
-
-		var tileColumn = _bgTileColumn + 2;
-		var tileRow = _bgTileRow;
-
-		var bgTileY = _scanline & 0b111;
-		if (tileColumn >= _tileColumns)
-		{
-			tileColumn -= _tileColumns;
-			bgTileY++;
-			if (bgTileY >= 8)
-			{
-				bgTileY -= 8;
-				tileRow++;
-			}
-		}
-
-		var patternTable = _ctrlBackgroundPatternTable ? PpuBus.PatternTable1Address : PpuBus.PatternTable0Address;
-		var bgPatternOffset = patternTable + (_fetchBgNametableByte * 16);
-
-		switch (_step)
-		{
-			case 0: // Fetch nametable byte and update shift registers
-				{
-					var tileIndex = tileColumn + (tileRow * _tileColumns);
-					_fetchBgNametableByte = Bus.ReadByte((ushort)(nametableAddress + tileIndex));
-					break;
-				}
-			case 2: // Fetch attribute table byte
-				{
-					var attribIndex = (tileRow / 4 * 8) + (tileColumn / 4);
-					_fetchBgAttributeByte = Bus.ReadByte((ushort)(nametableAddress + 0x03C0 + attribIndex));
-					break;
-				}
-			case 4: // Fetch pattern table tile low
-				{
-					_fetchBgPatternLow = Bus.ReadByte((ushort)(bgPatternOffset + bgTileY));
-					break;
-				}
-			case 6: // Fetch pattern table tile high
-				{
-					_fetchBgPatternHigh = Bus.ReadByte((ushort)(bgPatternOffset + bgTileY + 8));
-					break;
-				}
-		}
-
-		_step++;
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -311,7 +244,7 @@ internal sealed class Ppu
 			for (var i = 0; i < 64; i++)
 			{
 				var off = i * 4;
-				var yPos = _oam[off + 0];
+				var yPos = _oam[off + 0] + 1;
 
 				var y = _scanline - yPos;
 
@@ -358,21 +291,46 @@ internal sealed class Ppu
 			}
 		}
 
+		var nametableAddress = _ctrlBaseNametableAddr switch
+		{
+			0 => PpuBus.Nametable0Address,
+			1 => PpuBus.Nametable1Address,
+			2 => PpuBus.Nametable2Address,
+			3 => PpuBus.Nametable3Address,
+			_ => throw new UnreachableException()
+		};
+
+		var tileColumn = _bgTileColumn;
+		var tileRow = _bgTileRow;
+
+		var tileIndex = tileColumn + (tileRow * _tileColumns);
+		var bgNametableByte = Bus.ReadByte((ushort)(nametableAddress + tileIndex));
+
+		var attribIndex = (tileRow / 4 * 8) + (tileColumn / 4);
+		var bgAttribute = Bus.ReadByte((ushort)(nametableAddress + 0x03C0 + attribIndex));
+
+		var bgTileY = _scanline & 0b111;
+		var bgPatternTable = _ctrlBackgroundPatternTable ? PpuBus.PatternTable1Address : PpuBus.PatternTable0Address;
+		var bgPatternOffset = bgPatternTable + (bgNametableByte * 16);
+
+		var bgPatternLow = Bus.ReadByte((ushort)(bgPatternOffset + bgTileY));
+		var bgPatternHigh = Bus.ReadByte((ushort)(bgPatternOffset + bgTileY + 8));
+
 		var bgTileX = screenX & 0b111;
 
 		{
 			var paletteIndex = (_bgTileColumn % 4 / 2, _bgTileRow % 4 / 2) switch
 			{
-				(0, 0) => _bgAttribute & 0b11,
-				(1, 0) => (_bgAttribute >> 2) & 0b11,
-				(0, 1) => (_bgAttribute >> 4) & 0b11,
-				(1, 1) => (_bgAttribute >> 6) & 0b11,
+				(0, 0) => bgAttribute & 0b11,
+				(1, 0) => (bgAttribute >> 2) & 0b11,
+				(0, 1) => (bgAttribute >> 4) & 0b11,
+				(1, 1) => (bgAttribute >> 6) & 0b11,
 				_ => throw new UnreachableException()
 			};
 
 			var paletteOffset = PpuBus.PaletteRamAddress + 1 + (paletteIndex * 4);
 
-			var colorIndex = (((_bgPatternHigh >> (7 - bgTileX)) & 1) << 1) | ((_bgPatternLow >> (7 - bgTileX)) & 1);
+			var colorIndex = (((bgPatternHigh >> (7 - bgTileX)) & 1) << 1) | ((bgPatternLow >> (7 - bgTileX)) & 1);
 			color = colorIndex switch
 			{
 				0 => _palette[Bus.ReadByte(PpuBus.PaletteRamAddress)],

@@ -16,8 +16,8 @@ internal sealed class Cartridge
 		if (!header[..4].SequenceEqual(signature))
 			throw new("Not a valid iNES file.");
 
-		var prgRomSize = header[4] * 0x4000;
-		var chrRomSize = header[5] * 0x2000;
+		var prgRomBanks = header[4];
+		var chrRomBanks = header[5];
 
 		var flags6 = header[6];
 		var mirroringMode = ((flags6 & 1) == 0) ? MirroringMode.Vertical : MirroringMode.Horizontal;
@@ -25,8 +25,9 @@ internal sealed class Cartridge
 		
 		_mapper = mapperNumber switch
 		{
-			0 => new Mapper0(prgRomSize, chrRomSize, mirroringMode, data),
-			_ => throw new NotImplementedException()
+			0 => new Mapper0(prgRomBanks, chrRomBanks, mirroringMode, data),
+			1 => new Mapper1(prgRomBanks, chrRomBanks, mirroringMode, data),
+			_ => throw new NotImplementedException($"Mapper {mapperNumber} not implemented.")
 		};
 	}
 
