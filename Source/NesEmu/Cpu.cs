@@ -453,7 +453,7 @@ internal sealed class Cpu
 	private int _fetchStep = 0;
 	private int _cycles = 7;
 
-	private ushort _fetchedAddress = 0;
+	private ushort _fetchAddress = 0;
 	private byte _fetchLow;
 	private byte _fetchHigh;
 	private byte _fetchOperand;
@@ -535,58 +535,28 @@ internal sealed class Cpu
 	{
 		switch (CurrentAddressingMode)
 		{
-			case AddressingMode.Indirect: // 3 added cycles
-				{
-					switch (_fetchStep)
-					{
-						case 0:
-							_fetchLow = FetchByte();
-							_fetchStep++;
-							return false;
-						case 1:
-							_fetchHigh = FetchByte();
-							_fetchedAddress = (ushort)((_fetchHigh << 8) | _fetchLow);
-							_fetchStep++;
-							return false;
-						case 2:
-							_fetchLow = ReadByte(_fetchedAddress);
-							_fetchedAddress++;
-							// Reuse the same high byte to reproduce the "indirect jump bug"
-							_fetchedAddress &= 0x00FF;
-							_fetchedAddress |= (ushort)(_fetchHigh << 8);
-							_fetchStep++;
-							return false;
-						case 3:
-							_fetchHigh = ReadByte(_fetchedAddress);
-							_fetchedAddress = (ushort)((_fetchHigh << 8) | _fetchLow);
-							_fetchStep = 0;
-							return true;
-						default:
-							throw new UnreachableException();
-					}
-				}
 			case AddressingMode.XIndexedIndirect: // 3 added cycles
 				{
 					switch (_fetchStep)
 					{
 						case 0:
-							_fetchedAddress = FetchByte();
+							_fetchAddress = FetchByte();
 							_fetchStep++;
 							return false;
 						case 1:
-							_fetchedAddress += _regX;
-							_fetchedAddress &= 0x00FF;
+							_fetchAddress += _regX;
+							_fetchAddress &= 0x00FF;
 							_fetchStep++;
 							return false;
 						case 2:
-							_fetchLow = ReadByte(_fetchedAddress);
-							_fetchedAddress++;
-							_fetchedAddress &= 0x00FF;
+							_fetchLow = ReadByte(_fetchAddress);
+							_fetchAddress++;
+							_fetchAddress &= 0x00FF;
 							_fetchStep++;
 							return false;
 						case 3:
-							_fetchHigh = ReadByte(_fetchedAddress);
-							_fetchedAddress = (ushort)((_fetchHigh << 8) | _fetchLow);
+							_fetchHigh = ReadByte(_fetchAddress);
+							_fetchAddress = (ushort)((_fetchHigh << 8) | _fetchLow);
 							_fetchStep = 0;
 							return true;
 						default:
@@ -598,20 +568,20 @@ internal sealed class Cpu
 					switch (_fetchStep)
 					{
 						case 0:
-							_fetchedAddress = FetchByte();
+							_fetchAddress = FetchByte();
 							_fetchStep++;
 							return false;
 						case 1:
-							_fetchLow = ReadByte(_fetchedAddress);
-							_fetchedAddress++;
-							_fetchedAddress &= 0x00FF;
+							_fetchLow = ReadByte(_fetchAddress);
+							_fetchAddress++;
+							_fetchAddress &= 0x00FF;
 							_fetchStep++;
 							return false;
 						case 2:
-							_fetchHigh = ReadByte(_fetchedAddress);
-							_fetchedAddress = (ushort)((_fetchHigh << 8) | _fetchLow);
-							_pageBoundaryCrossed = (_fetchedAddress & 0xFF00) != ((_fetchedAddress + _regY) & 0xFF00);
-							_fetchedAddress += _regY;
+							_fetchHigh = ReadByte(_fetchAddress);
+							_fetchAddress = (ushort)((_fetchHigh << 8) | _fetchLow);
+							_pageBoundaryCrossed = (_fetchAddress & 0xFF00) != ((_fetchAddress + _regY) & 0xFF00);
+							_fetchAddress += _regY;
 							_fetchStep = 0;
 							return true;
 						default:
@@ -629,11 +599,11 @@ internal sealed class Cpu
 		if (CurrentAddressingMode is AddressingMode.Immediate or AddressingMode.Accumulator)
 			throw new UnreachableException($"Attempted to read memory operand from immediate or accumulator (opcode 0x{_currentOpcode:X2}).");
 
-		_fetchOperand = ReadByte(_fetchedAddress);
+		_fetchOperand = ReadByte(_fetchAddress);
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	private void WriteMemoryOperand() => WriteByte(_fetchedAddress, _fetchOperand);
+	private void WriteMemoryOperand() => WriteByte(_fetchAddress, _fetchOperand);
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	private string DisassembleNext()
@@ -695,6 +665,7 @@ internal sealed class Cpu
 
 		switch (CurrentAddressingMode)
 		{
+			case AddressingMode.Indirect: ExecuteAddrIndirect(); break;
 			case AddressingMode.Accumulator: ExecuteAddrAccumulator(); break;
 			case AddressingMode.Implied: ExecuteAddrImplied(); break;
 			case AddressingMode.Immediate: ExecuteAddrImmediate(); break;
@@ -711,22 +682,13 @@ internal sealed class Cpu
 					case Instruction.Adc: ExecuteInstAdc(); break;
 					case Instruction.And: ExecuteInstAnd(); break;
 					case Instruction.Asl: ExecuteInstAsl(); break;
-					//case Instruction.Bcc: ExecuteInstBcc(); break;
-					//case Instruction.Bcs: ExecuteInstBcs(); break;
-					//case Instruction.Beq: ExecuteInstBeq(); break;
 					case Instruction.Bit: ExecuteInstBit(); break;
-					//case Instruction.Bmi: ExecuteInstBmi(); break;
-					//case Instruction.Bne: ExecuteInstBne(); break;
-					//case Instruction.Bpl: ExecuteInstBpl(); break;
-					//case Instruction.Bvc: ExecuteInstBvc(); break;
-					//case Instruction.Bvs: ExecuteInstBvs(); break;
 					case Instruction.Cmp: ExecuteInstCmp(); break;
 					case Instruction.Cpx: ExecuteInstCpx(); break;
 					case Instruction.Cpy: ExecuteInstCpy(); break;
 					case Instruction.Dec: ExecuteInstDec(); break;
 					case Instruction.Eor: ExecuteInstEor(); break;
 					case Instruction.Inc: ExecuteInstInc(); break;
-					case Instruction.Jmp: ExecuteInstJmp(); break;
 					case Instruction.Lda: ExecuteInstLda(); break;
 					case Instruction.Ldx: ExecuteInstLdx(); break;
 					case Instruction.Ldy: ExecuteInstLdy(); break;
@@ -757,6 +719,15 @@ internal sealed class Cpu
 	}
 
 	#region Addressing modes
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	private void ExecuteAddrIndirect()
+	{
+		if (CurrentInstruction != Instruction.Jmp)
+			throw new UnreachableException();
+
+		ExecuteInstJmp();
+	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	private void ExecuteAddrAccumulator()
@@ -906,8 +877,8 @@ internal sealed class Cpu
 						_step++;
 						break;
 					case 3: // read from effective address
-						_fetchedAddress = (ushort)((_fetchHigh << 8) | _fetchLow);
-						var value = ReadByte(_fetchedAddress);
+						_fetchAddress = (ushort)((_fetchHigh << 8) | _fetchLow);
+						var value = ReadByte(_fetchAddress);
 						switch (CurrentInstruction)
 						{
 							case Instruction.Adc: ExecuteOpAdc(value); break;
@@ -944,12 +915,12 @@ internal sealed class Cpu
 						_step++;
 						break;
 					case 3: // read from effective address
-						_fetchedAddress = (ushort)((_fetchHigh << 8) | _fetchLow);
-						_fetchOperand = ReadByte(_fetchedAddress);
+						_fetchAddress = (ushort)((_fetchHigh << 8) | _fetchLow);
+						_fetchOperand = ReadByte(_fetchAddress);
 						_step++;
 						break;
 					case 4: // write the value back to effective address, and do the operation on it
-						WriteByte(_fetchedAddress, _fetchOperand);
+						WriteByte(_fetchAddress, _fetchOperand);
 						switch (CurrentInstruction)
 						{
 							case Instruction.Asl: ExecuteOpAsl(ref _fetchOperand); break;
@@ -968,7 +939,7 @@ internal sealed class Cpu
 						_step++;
 						break;
 					case 5: // write the new value to effective address
-						WriteByte(_fetchedAddress, _fetchOperand);
+						WriteByte(_fetchAddress, _fetchOperand);
 						_step = 0;
 						break;
 				}
@@ -988,13 +959,13 @@ internal sealed class Cpu
 						_step++;
 						break;
 					case 3: // write register to effective address
-						_fetchedAddress = (ushort)((_fetchHigh << 8) | _fetchLow);
+						_fetchAddress = (ushort)((_fetchHigh << 8) | _fetchLow);
 						switch (CurrentInstruction)
 						{
-							case Instruction.Sta: WriteByte(_fetchedAddress, ExecuteOpSta()); break;
-							case Instruction.Stx: WriteByte(_fetchedAddress, ExecuteOpStx()); break;
-							case Instruction.Sty: WriteByte(_fetchedAddress, ExecuteOpSty()); break;
-							case Instruction.IllSax: WriteByte(_fetchedAddress, ExecuteOpIllSax()); break;
+							case Instruction.Sta: WriteByte(_fetchAddress, ExecuteOpSta()); break;
+							case Instruction.Stx: WriteByte(_fetchAddress, ExecuteOpStx()); break;
+							case Instruction.Sty: WriteByte(_fetchAddress, ExecuteOpSty()); break;
+							case Instruction.IllSax: WriteByte(_fetchAddress, ExecuteOpIllSax()); break;
 						}
 						_step = 0;
 						break;
@@ -1017,11 +988,11 @@ internal sealed class Cpu
 						_step++;
 						break;
 					case 1: // fetch address, increment PC
-						_fetchedAddress = FetchByte();
+						_fetchAddress = FetchByte();
 						_step++;
 						break;
 					case 2: // read from effective address
-						var value = ReadByte(_fetchedAddress);
+						var value = ReadByte(_fetchAddress);
 						switch (CurrentInstruction)
 						{
 							case Instruction.Adc: ExecuteOpAdc(value); break;
@@ -1050,15 +1021,15 @@ internal sealed class Cpu
 						_step++;
 						break;
 					case 1: // fetch address, increment PC
-						_fetchedAddress = FetchByte();
+						_fetchAddress = FetchByte();
 						_step++;
 						break;
 					case 2: // read from effective address
-						_fetchOperand = ReadByte(_fetchedAddress);
+						_fetchOperand = ReadByte(_fetchAddress);
 						_step++;
 						break;
 					case 3: // write the value back to effective address, and do the operation on it
-						WriteByte(_fetchedAddress, _fetchOperand);
+						WriteByte(_fetchAddress, _fetchOperand);
 						switch (CurrentInstruction)
 						{
 							case Instruction.Asl: ExecuteOpAsl(ref _fetchOperand); break;
@@ -1077,7 +1048,7 @@ internal sealed class Cpu
 						_step++;
 						break;
 					case 4: // write the new value to effective address
-						WriteByte(_fetchedAddress, _fetchOperand);
+						WriteByte(_fetchAddress, _fetchOperand);
 						_step = 0;
 						break;
 				}
@@ -1089,16 +1060,16 @@ internal sealed class Cpu
 						_step++;
 						break;
 					case 1: // fetch address, increment PC
-						_fetchedAddress = FetchByte();
+						_fetchAddress = FetchByte();
 						_step++;
 						break;
 					case 2: // write register to effective address
 						switch (CurrentInstruction)
 						{
-							case Instruction.Sta: WriteByte(_fetchedAddress, ExecuteOpSta()); break;
-							case Instruction.Stx: WriteByte(_fetchedAddress, ExecuteOpStx()); break;
-							case Instruction.Sty: WriteByte(_fetchedAddress, ExecuteOpSty()); break;
-							case Instruction.IllSax: WriteByte(_fetchedAddress, ExecuteOpIllSax()); break;
+							case Instruction.Sta: WriteByte(_fetchAddress, ExecuteOpSta()); break;
+							case Instruction.Stx: WriteByte(_fetchAddress, ExecuteOpStx()); break;
+							case Instruction.Sty: WriteByte(_fetchAddress, ExecuteOpSty()); break;
+							case Instruction.IllSax: WriteByte(_fetchAddress, ExecuteOpIllSax()); break;
 						}
 						_step = 0;
 						break;
@@ -1128,17 +1099,17 @@ internal sealed class Cpu
 						_step++;
 						break;
 					case 1: // fetch address, increment PC
-						_fetchedAddress = FetchByte();
+						_fetchAddress = FetchByte();
 						_step++;
 						break;
 					case 2: // read from address, add index register to it
-						ReadByte(_fetchedAddress);
-						_fetchedAddress += index;
-						_fetchedAddress &= 0xFF;
+						ReadByte(_fetchAddress);
+						_fetchAddress += index;
+						_fetchAddress &= 0xFF;
 						_step++;
 						break;
 					case 3: // read from effective address
-						var value = ReadByte(_fetchedAddress);
+						var value = ReadByte(_fetchAddress);
 						switch (CurrentInstruction)
 						{
 							case Instruction.Adc: ExecuteOpAdc(value); break;
@@ -1167,21 +1138,21 @@ internal sealed class Cpu
 						_step++;
 						break;
 					case 1: // fetch address, increment PC
-						_fetchedAddress = FetchByte();
+						_fetchAddress = FetchByte();
 						_step++;
 						break;
 					case 2: // read from address, add index register X to it
-						ReadByte(_fetchedAddress);
-						_fetchedAddress += _regX;
-						_fetchedAddress &= 0xFF;
+						ReadByte(_fetchAddress);
+						_fetchAddress += _regX;
+						_fetchAddress &= 0xFF;
 						_step++;
 						break;
 					case 3: // read from effective address
-						_fetchOperand = ReadByte(_fetchedAddress);
+						_fetchOperand = ReadByte(_fetchAddress);
 						_step++;
 						break;
 					case 4: // write the value back to effective address, and do the operation on it
-						WriteByte(_fetchedAddress, _fetchOperand);
+						WriteByte(_fetchAddress, _fetchOperand);
 						switch (CurrentInstruction)
 						{
 							case Instruction.Asl: ExecuteOpAsl(ref _fetchOperand); break;
@@ -1200,7 +1171,7 @@ internal sealed class Cpu
 						_step++;
 						break;
 					case 5: // write the new value to effective address
-						WriteByte(_fetchedAddress, _fetchOperand);
+						WriteByte(_fetchAddress, _fetchOperand);
 						_step = 0;
 						break;
 				}
@@ -1212,22 +1183,22 @@ internal sealed class Cpu
 						_step++;
 						break;
 					case 1: // fetch address, increment PC
-						_fetchedAddress = FetchByte();
+						_fetchAddress = FetchByte();
 						_step++;
 						break;
 					case 2: // read from address, add index register to it
-						ReadByte(_fetchedAddress);
-						_fetchedAddress += index;
-						_fetchedAddress &= 0xFF;
+						ReadByte(_fetchAddress);
+						_fetchAddress += index;
+						_fetchAddress &= 0xFF;
 						_step++;
 						break;
 					case 3: // write to effective address
 						switch (CurrentInstruction)
 						{
-							case Instruction.Sta: WriteByte(_fetchedAddress, ExecuteOpSta()); break;
-							case Instruction.Stx: WriteByte(_fetchedAddress, ExecuteOpStx()); break;
-							case Instruction.Sty: WriteByte(_fetchedAddress, ExecuteOpSty()); break;
-							case Instruction.IllSax: WriteByte(_fetchedAddress, ExecuteOpIllSax()); break;
+							case Instruction.Sta: WriteByte(_fetchAddress, ExecuteOpSta()); break;
+							case Instruction.Stx: WriteByte(_fetchAddress, ExecuteOpStx()); break;
+							case Instruction.Sty: WriteByte(_fetchAddress, ExecuteOpSty()); break;
+							case Instruction.IllSax: WriteByte(_fetchAddress, ExecuteOpIllSax()); break;
 						}
 						_step = 0;
 						break;
@@ -1268,7 +1239,7 @@ internal sealed class Cpu
 						_step++;
 						break;
 					case 3: // read from effective address, fix the high byte of effective address
-						_fetchedAddress = (ushort)((_fetchHigh << 8) | _fetchLow);
+						_fetchAddress = (ushort)((_fetchHigh << 8) | _fetchLow);
 
 						// If page boundary was not crossed, do not incur penalty cycle, address is correct
 						//  and will only be read once immediately in this cycle, finishing the instruction
@@ -1278,15 +1249,15 @@ internal sealed class Cpu
 
 						// If page boundary was crossed, read from incorrect address,
 						//  fix the high byte and incur a penalty cycle
-						ReadByte(_fetchedAddress);
+						ReadByte(_fetchAddress);
 
 						_fetchHigh++;
-						_fetchedAddress = (ushort)((_fetchHigh << 8) | _fetchLow);
+						_fetchAddress = (ushort)((_fetchHigh << 8) | _fetchLow);
 
 						_step++;
 						break;
 					case 4: // re-read from effective address
-						var value = ReadByte(_fetchedAddress);
+						var value = ReadByte(_fetchAddress);
 						switch (CurrentInstruction)
 						{
 							case Instruction.Adc: ExecuteOpAdc(value); break;
@@ -1328,8 +1299,8 @@ internal sealed class Cpu
 						_step++;
 						break;
 					case 3: // read from effective address, fix the high byte of effective address
-						_fetchedAddress = (ushort)((_fetchHigh << 8) | _fetchLow);
-						ReadByte(_fetchedAddress);
+						_fetchAddress = (ushort)((_fetchHigh << 8) | _fetchLow);
+						ReadByte(_fetchAddress);
 
 						if (_pageBoundaryCrossed)
 							_fetchHigh++;
@@ -1337,12 +1308,12 @@ internal sealed class Cpu
 						_step++;
 						break;
 					case 4:
-						_fetchedAddress = (ushort)((_fetchHigh << 8) | _fetchLow);
-						_fetchOperand = ReadByte(_fetchedAddress);
+						_fetchAddress = (ushort)((_fetchHigh << 8) | _fetchLow);
+						_fetchOperand = ReadByte(_fetchAddress);
 						_step++;
 						break;
 					case 5: // write the value back to effective address, and do the operation on it
-						WriteByte(_fetchedAddress, _fetchOperand);
+						WriteByte(_fetchAddress, _fetchOperand);
 						switch (CurrentInstruction)
 						{
 							case Instruction.Asl: ExecuteOpAsl(ref _fetchOperand); break;
@@ -1361,7 +1332,7 @@ internal sealed class Cpu
 						_step++;
 						break;
 					case 6: // write the new value to effective address
-						WriteByte(_fetchedAddress, _fetchOperand);
+						WriteByte(_fetchAddress, _fetchOperand);
 						_step = 0;
 						break;
 				}
@@ -1384,8 +1355,8 @@ internal sealed class Cpu
 						_step++;
 						break;
 					case 3: // read from effective address, fix the high byte of effective address
-						_fetchedAddress = (ushort)((_fetchHigh << 8) | _fetchLow);
-						ReadByte(_fetchedAddress);
+						_fetchAddress = (ushort)((_fetchHigh << 8) | _fetchLow);
+						ReadByte(_fetchAddress);
 
 						if (_pageBoundaryCrossed)
 							_fetchHigh++;
@@ -1393,12 +1364,12 @@ internal sealed class Cpu
 						_step++;
 						break;
 					case 4: // write to effective address
-						_fetchedAddress = (ushort)((_fetchHigh << 8) | _fetchLow);
+						_fetchAddress = (ushort)((_fetchHigh << 8) | _fetchLow);
 						switch (CurrentInstruction)
 						{
-							case Instruction.Sta: WriteByte(_fetchedAddress, ExecuteOpSta()); break;
-							case Instruction.Stx: WriteByte(_fetchedAddress, ExecuteOpStx()); break;
-							case Instruction.Sty: WriteByte(_fetchedAddress, ExecuteOpSty()); break;
+							case Instruction.Sta: WriteByte(_fetchAddress, ExecuteOpSta()); break;
+							case Instruction.Stx: WriteByte(_fetchAddress, ExecuteOpStx()); break;
+							case Instruction.Sty: WriteByte(_fetchAddress, ExecuteOpSty()); break;
 								// TODO: case Instruction.IllSha: WriteByte(_fetchedAddress, ExecuteOpIllSha()); break;
 								// TODO: case Instruction.IllShx: WriteByte(_fetchedAddress, ExecuteOpIllShx()); break;
 								// TODO: case Instruction.IllShy: WriteByte(_fetchedAddress, ExecuteOpIllShy()); break;
@@ -1455,7 +1426,7 @@ internal sealed class Cpu
 				_step++;
 				break;
 			case 3: // Fetch opcode of next instruction. Fix PCH. If it did not change, increment PC.
-				// PCH was never "broken", there is no point in "unfixing" it in cycle 3 so we can fix it again here, so just do nothing
+					// PCH was never "broken", there is no point in "unfixing" it in cycle 3 so we can fix it again here, so just do nothing
 				_step = 0;
 				break;
 		}
@@ -1671,6 +1642,40 @@ internal sealed class Cpu
 			case 3: // pull register from stack
 				RegStatus = ReadByte(RegSp);
 				_flagB = false;
+				_step = 0;
+				break;
+			default:
+				throw new UnreachableException();
+		}
+	}
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	private void ExecuteInstJmp()
+	{
+		switch (_step)
+		{
+			case 0: // fetch opcode, increment PC
+				_step++;
+				break;
+			case 1: // fetch pointer address low, increment PC
+				_fetchLow = FetchByte();
+				_step++;
+				break;
+			case 2: // fetch pointer address high, increment PC
+				_fetchHigh = FetchByte();
+				_step++;
+				break;
+			case 3: // fetch low address to latch
+				_fetchAddress = (ushort)((_fetchHigh << 8) | _fetchLow);
+				_fetchLow = ReadByte(_fetchAddress);
+				_step++;
+				break;
+			case 4: // fetch PCH, copy latch to PCL
+				_fetchAddress++;
+				_fetchAddress &= 0x00FF;
+				_fetchAddress |= (ushort)(_fetchHigh << 8);
+				_fetchHigh = ReadByte(_fetchAddress);
+				_regPc = (ushort)((_fetchHigh << 8) | _fetchLow);
 				_step = 0;
 				break;
 			default:
@@ -2254,15 +2259,6 @@ internal sealed class Cpu
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	private void ExecuteInstBcc() => ExecuteConditionalBranch(!_flagCarry);
-
-	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	private void ExecuteInstBcs() => ExecuteConditionalBranch(_flagCarry);
-
-	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	private void ExecuteInstBeq() => ExecuteConditionalBranch(_flagZero);
-
-	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	private void ExecuteInstBit()
 	{
 		switch (_step)
@@ -2289,21 +2285,6 @@ internal sealed class Cpu
 				throw new UnreachableException();
 		}
 	}
-
-	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	private void ExecuteInstBmi() => ExecuteConditionalBranch(_flagNegative);
-
-	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	private void ExecuteInstBne() => ExecuteConditionalBranch(!_flagZero);
-
-	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	private void ExecuteInstBpl() => ExecuteConditionalBranch(!_flagNegative);
-
-	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	private void ExecuteInstBvc() => ExecuteConditionalBranch(!_flagOverflow);
-
-	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	private void ExecuteInstBvs() => ExecuteConditionalBranch(_flagOverflow);
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	private void ExecuteInstCmp()
@@ -2536,27 +2517,6 @@ internal sealed class Cpu
 				}
 			case 5: // write the new value to effective address
 				WriteMemoryOperand();
-				_step = 0;
-				break;
-			default:
-				throw new UnreachableException();
-		}
-	}
-
-	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	private void ExecuteInstJmp()
-	{
-		switch (_step)
-		{
-			case 0: // Fetch opcode
-				_step++;
-				break;
-			case 1:
-				if (!FetchAddress())
-					break;
-
-				_regPc = _fetchedAddress;
-
 				_step = 0;
 				break;
 			default:
@@ -3465,41 +3425,6 @@ internal sealed class Cpu
 			case 5: // write the new value to effective address
 				WriteMemoryOperand();
 
-				_step = 0;
-				break;
-			default:
-				throw new UnreachableException();
-		}
-	}
-
-	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	private void ExecuteConditionalBranch(bool condition)
-	{
-		switch (_step)
-		{
-			case 0: // Fetch opcode
-				_step++;
-				break;
-			case 1: // Check condition, stop if false
-				_fetchOperand = FetchByte(); // Fetch the offset
-
-				if (!condition)
-				{
-					_step = 0;
-					break;
-				}
-
-				_step++;
-				break;
-			case 2:
-				var page = _regPc >> 8;
-				_regPc = (ushort)(_regPc + (sbyte)_fetchOperand);
-				var newPage = _regPc >> 8;
-				if (page == newPage)
-					goto case 3;
-				_step++;
-				break;
-			case 3: // An additional step that simply wastes a cycle if branching to different page
 				_step = 0;
 				break;
 			default:
