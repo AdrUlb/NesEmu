@@ -1,4 +1,6 @@
-﻿namespace NesEmu.Mappers;
+﻿using System.ComponentModel.DataAnnotations;
+
+namespace NesEmu.Mappers;
 
 internal sealed class Mapper0 : Mapper
 {
@@ -48,12 +50,21 @@ internal sealed class Mapper0 : Mapper
 		}
 	}
 
-	public override byte CpuReadByte(ushort address) => address switch
+	public override byte CpuReadByte(ushort address)
 	{
-		>= 0x8000 and < 0xC000 => _prgRom[address - 0x8000],
-		>= 0xC000 => _prgRom[address - (_prgRom.Length == 0x4000 ? 0xC000 : 0x8000)],
-		_ => 0xFF,
-	};
+		if (address is >= 0x8000 and < 0xC000)
+			return _prgRom[address - 0x8000];
+
+		if (address >= 0x8000)
+		{
+			address -= 0x8000;
+			address %= (ushort)_prgRom.Length;
+
+			return _prgRom[address];
+		}
+
+		return 0xFF;
+	}
 
 	public override void CpuWriteByte(ushort address, byte value)
 	{

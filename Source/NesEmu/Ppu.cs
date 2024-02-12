@@ -31,10 +31,18 @@ internal sealed class Ppu
 	private bool _ctrlAddrIncrMode = false;
 	private byte _ctrlBaseNametableAddr;
 
+	private bool _writeLatch = false;
+
+	private byte _scrollX;
+	private byte _scrollY;
+
 	private byte _bgTileColumn;
 	private byte _bgTileRow;
 
 	private int _nextPixelIndex = 0;
+
+	private bool _statusSprite0Hit = false;
+	private bool _wasSprite0HitThisFrame = false;
 
 	private readonly Color[] _palette = new Color[64];
 	private readonly byte[] _oam = new byte[256];
@@ -75,7 +83,8 @@ internal sealed class Ppu
 	{
 		get => (byte)
 		(
-			((StatusVblank ? 1 : 0) << 7)
+			((StatusVblank ? 1 : 0) << 7) |
+			((_statusSprite0Hit ? 1 : 0) << 6)
 		);
 	}
 
@@ -99,12 +108,19 @@ internal sealed class Ppu
 	{
 		switch (num)
 		{
-			case 0x2000: // PPUCTRL
-				return RegCtrl;
-			case 0x2002: // PPUSTATUS
+			case 0x2000: // PPUCTRL - write only
+				return 0xFF;
+			case 0x2001: // PPUMASK - write only
+				return 0xFF;
+			case 0x2002: // PPUSTATUS - read only
+				_writeLatch = false; // Reset write latch
 				return RegStatus;
-			case 0x2004: // OAMDATA
+			case 0x2003: // OAMADDR - write only
+				return 0xFF;
+			case 0x2004: // OAMDATA - read/write
 				return _oam[_oamAddr];
+			case 0x2005: // PPUSCROLL - write only
+				return 0xFF;
 			case 0x2007: // PPUDATA
 				{
 					byte ret;
@@ -129,9 +145,6 @@ internal sealed class Ppu
 					return ret;
 				}
 
-			case 0x2001:
-			case 0x2003:
-			case 0x2005:
 			case 0x2006:
 			case 0x4014:
 			default:
@@ -143,17 +156,36 @@ internal sealed class Ppu
 	{
 		switch (num)
 		{
-			case 0x2000: // PPUCTRL
+			case 0x2000: // PPUCTRL - write only
 				RegCtrl = value;
 				break;
-			case 0x2003: // OAMADDR
+			case 0x2003: // OAMADDR - write only
 				_oamAddr = value;
 				break;
-			case 0x2004: // OAMDATA
+			case 0x2004: // OAMDATA - read/write
 				_oam[_oamAddr++] = value;
 				break;
+			case 0x2005: // PPUSCROLL - write only
+				if (_writeLatch)
+				{
+					_scrollY = value;
+				}
+				else
+				{
+					_scrollX = value;
+				}
+				_writeLatch = !_writeLatch;
+				break;
 			case 0x2006: // PPUADDR
-				_regAddr = (ushort)((_regAddr << 8) | value);
+				if (_writeLatch)
+				{
+					_regAddr |= value;
+				}
+				else
+				{
+					_regAddr = (ushort)(value << 8);
+				}
+				_writeLatch = !_writeLatch;
 				break;
 			case 0x2007: // PPUDATA
 				Bus.WriteByte(_regAddr, value);
@@ -216,6 +248,7 @@ internal sealed class Ppu
 			{
 				case 241: // End of visible scanlines
 					StatusVblank = true;
+					_statusSprite0Hit = false;
 					if (_ctrlEnableVblankNmi)
 						RequestVblankInterrupt = true;
 					break;
@@ -226,6 +259,7 @@ internal sealed class Ppu
 					_scanline = 0;
 					_bgTileRow = 0;
 					StatusVblank = false;
+					_wasSprite0HitThisFrame = false;
 					break;
 			}
 		}
@@ -238,7 +272,8 @@ internal sealed class Ppu
 
 		var screenX = _cycle - 1;
 
-		Color color;
+		Color spriteColor = Color.Transparent;
+		var sprite0 = false;
 
 		{
 			for (var i = 0; i < 64; i++)
@@ -275,7 +310,7 @@ internal sealed class Ppu
 				var lsb = Bus.ReadByte((ushort)(tileOff + flippedY));
 
 				var colorIndex = (((msb >> flippedX) & 1) << 1) | ((lsb >> flippedX) & 1);
-				color = colorIndex switch
+				spriteColor = colorIndex switch
 				{
 					0 => Color.Transparent,
 					1 => _palette[Bus.ReadByte((ushort)(paletteOffset + 0))],
@@ -284,10 +319,13 @@ internal sealed class Ppu
 					_ => throw new UnreachableException()
 				};
 
-				if (color == Color.Transparent)
+				if (spriteColor == Color.Transparent)
 					continue;
 
-				goto end;
+				if (i == 0)
+					sprite0 = true;
+
+				break;
 			}
 		}
 
@@ -300,16 +338,17 @@ internal sealed class Ppu
 			_ => throw new UnreachableException()
 		};
 
-		var tileColumn = _bgTileColumn;
-		var tileRow = _bgTileRow;
+		var tileCol = screenX / 8;
+		var tileRow = _scanline / 8;
 
-		var tileIndex = tileColumn + (tileRow * _tileColumns);
+		var tileIndex = tileCol + (tileRow * _tileColumns);
 		var bgNametableByte = Bus.ReadByte((ushort)(nametableAddress + tileIndex));
 
-		var attribIndex = (tileRow / 4 * 8) + (tileColumn / 4);
+		var attribIndex = (tileRow / 4 * 8) + (tileCol / 4);
+
 		var bgAttribute = Bus.ReadByte((ushort)(nametableAddress + 0x03C0 + attribIndex));
 
-		var bgTileY = _scanline & 0b111;
+		var bgTileY = (_scanline & 0b111);
 		var bgPatternTable = _ctrlBackgroundPatternTable ? PpuBus.PatternTable1Address : PpuBus.PatternTable0Address;
 		var bgPatternOffset = bgPatternTable + (bgNametableByte * 16);
 
@@ -318,30 +357,42 @@ internal sealed class Ppu
 
 		var bgTileX = screenX & 0b111;
 
+		Color bgColor;
+		var bgPaletteIndex = (tileCol % 4 / 2, tileRow % 4 / 2) switch
 		{
-			var paletteIndex = (_bgTileColumn % 4 / 2, _bgTileRow % 4 / 2) switch
-			{
-				(0, 0) => bgAttribute & 0b11,
-				(1, 0) => (bgAttribute >> 2) & 0b11,
-				(0, 1) => (bgAttribute >> 4) & 0b11,
-				(1, 1) => (bgAttribute >> 6) & 0b11,
-				_ => throw new UnreachableException()
-			};
+			(0, 0) => bgAttribute & 0b11,
+			(1, 0) => (bgAttribute >> 2) & 0b11,
+			(0, 1) => (bgAttribute >> 4) & 0b11,
+			(1, 1) => (bgAttribute >> 6) & 0b11,
+			_ => throw new UnreachableException()
+		};
 
-			var paletteOffset = PpuBus.PaletteRamAddress + 1 + (paletteIndex * 4);
+		var bgPaletteOffset = PpuBus.PaletteRamAddress + 1 + (bgPaletteIndex * 4);
 
-			var colorIndex = (((bgPatternHigh >> (7 - bgTileX)) & 1) << 1) | ((bgPatternLow >> (7 - bgTileX)) & 1);
-			color = colorIndex switch
-			{
-				0 => _palette[Bus.ReadByte(PpuBus.PaletteRamAddress)],
-				1 => _palette[Bus.ReadByte((ushort)(paletteOffset + 0))],
-				2 => _palette[Bus.ReadByte((ushort)(paletteOffset + 1))],
-				3 => _palette[Bus.ReadByte((ushort)(paletteOffset + 2))],
-				_ => throw new UnreachableException()
-			};
+		var bgColorIndex = (((bgPatternHigh >> (7 - bgTileX)) & 1) << 1) | ((bgPatternLow >> (7 - bgTileX)) & 1);
+		bgColor = bgColorIndex switch
+		{
+			0 => _palette[Bus.ReadByte(PpuBus.PaletteRamAddress)],
+			1 => _palette[Bus.ReadByte((ushort)(bgPaletteOffset + 0))],
+			2 => _palette[Bus.ReadByte((ushort)(bgPaletteOffset + 1))],
+			3 => _palette[Bus.ReadByte((ushort)(bgPaletteOffset + 2))],
+			_ => throw new UnreachableException()
+		};
+
+		// Sprite is transparent
+		if (spriteColor == Color.Transparent)
+		{
+			Framebuffer[_nextPixelIndex++] = bgColor;
+			return;
 		}
 
-	end:
-		Framebuffer[_nextPixelIndex++] = color;
+		// Background is also opaque and sprite is sprite 0
+		if (bgColorIndex != 0 && sprite0 && !_wasSprite0HitThisFrame)
+		{
+			_statusSprite0Hit = true;
+			_wasSprite0HitThisFrame = true;
+		}
+
+		Framebuffer[_nextPixelIndex++] = spriteColor;
 	}
 }

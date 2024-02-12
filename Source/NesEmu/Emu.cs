@@ -29,7 +29,7 @@ internal sealed class Emu
 		Cpu.Bus.Ppu = Ppu;
 		Cpu.Bus.Controller = Controller;
 
-		using (var fs = File.OpenRead(@"C:\Stuff\Roms\NES\tetris.nes"))
+		using (var fs = File.OpenRead(@"C:\Stuff\Roms\NES\mario.nes"))
 		{
 			var cart = new Cartridge(Ppu, fs);
 			Cpu.Bus.Cartridge = cart;

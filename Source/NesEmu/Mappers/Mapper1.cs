@@ -54,11 +54,21 @@ internal sealed class Mapper1 : Mapper
 		}
 	}
 
-	public override byte CpuReadByte(ushort address) => address switch
+	public override byte CpuReadByte(ushort address)
 	{
-		>= 0x8000 => _prgRom[address - 0x8000],
-		_ => 0xFF,
-	};
+		if (address is >= 0x8000 and < 0xC000)
+			return _prgRom[address - 0x8000];
+
+		if (address >= 0x8000)
+		{
+			address -= 0x8000;
+			address %= (ushort)_prgRom.Length;
+
+			return _prgRom[address];
+		}
+
+		return 0xFF;
+	}
 
 	public override void CpuWriteByte(ushort address, byte value)
 	{
@@ -71,6 +81,8 @@ internal sealed class Mapper1 : Mapper
 			_shiftRegister = 0;
 			return;
 		}
+
+		Console.WriteLine($"MAPPER1: {address:X4}={_shiftRegister:X2}");
 
 		_shiftRegister |= (value & 1) << _writeCount;
 		_writeCount++;

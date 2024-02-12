@@ -20,9 +20,12 @@ internal sealed class Cartridge
 		var chrRomBanks = header[5];
 
 		var flags6 = header[6];
-		var mirroringMode = ((flags6 & 1) == 0) ? MirroringMode.Vertical : MirroringMode.Horizontal;
+		var mirroringMode = ((flags6 & 1) == 0) ? MirroringMode.Horizontal : MirroringMode.Vertical;
 		var mapperNumber = flags6 >> 4;
-		
+
+		Console.WriteLine($"Mapper: {mapperNumber}");
+		Console.WriteLine($"Mirroring: {mirroringMode}");
+
 		_mapper = mapperNumber switch
 		{
 			0 => new Mapper0(prgRomBanks, chrRomBanks, mirroringMode, data),
