@@ -16,28 +16,39 @@ internal sealed class Ppu
 	private readonly CpuBus _cpuBus;
 
 	private int _scanline = 261;
-	private int _cycle = 0;
-	private ushort _regAddr = 0;
+	private int _cycle = 258;
 	private byte _regData = 0;
 	private byte _oamAddr;
 
-	private int _step = 0;
+	private bool _regW = false;
+	private byte _regX = 0;
+	private ushort _regV;
+	private ushort _regT;
+
+	private ushort _regHackAddr;
+
+	private int _fetchStep = 1;
+
+	private ushort _bgFetchAddress;
+	private byte _bgFetchTile;
+	private byte _bgFetchAttribute;
+	private byte _bgFetchPatternLow;
+	private byte _bgFetchPatternHigh;
+
+	private ushort _bgPatternLows;
+	private ushort _bgPatternHighs;
+	private uint _bgPalette;
 
 	private bool _ctrlEnableVblankNmi = false;
 	private bool _ctrlMasterSlaveSelect = false;
 	private bool _ctrlSpriteSize = false;
-	private bool _ctrlBackgroundPatternTable = false;
+	private byte _ctrlBackgroundPatternTable = 0;
 	private bool _ctrlSpritePatternTable = false;
 	private bool _ctrlAddrIncrMode = false;
 	private byte _ctrlBaseNametableAddr;
 
-	private bool _writeLatch = false;
-
-	private byte _scrollX;
-	private byte _scrollY;
-
-	private byte _bgTileColumn;
-	private byte _bgTileRow;
+	private bool _maskShowBackground = true;
+	private bool _maskShowSprites = true;
 
 	private int _nextPixelIndex = 0;
 
@@ -54,6 +65,8 @@ internal sealed class Ppu
 
 	public bool RequestVblankInterrupt { get; set; } = false;
 
+	public bool RenderingEnabled => _maskShowBackground | _maskShowSprites;
+
 	private byte RegCtrl
 	{
 		get => (byte)
@@ -61,7 +74,7 @@ internal sealed class Ppu
 			((_ctrlEnableVblankNmi ? 1 : 0) << 7) |
 			((_ctrlMasterSlaveSelect ? 1 : 0) << 6) |
 			((_ctrlSpriteSize ? 1 : 0) << 5) |
-			((_ctrlBackgroundPatternTable ? 1 : 0) << 4) |
+			((_ctrlBackgroundPatternTable & 1) << 4) |
 			((_ctrlSpritePatternTable ? 1 : 0) << 3) |
 			((_ctrlAddrIncrMode ? 1 : 0) << 2) |
 			(_ctrlBaseNametableAddr & 0b11)
@@ -72,7 +85,7 @@ internal sealed class Ppu
 			_ctrlEnableVblankNmi = ((value >> 7) & 1) != 0;
 			_ctrlMasterSlaveSelect = ((value >> 6) & 1) != 0;
 			_ctrlSpriteSize = ((value >> 7) & 5) != 0;
-			_ctrlBackgroundPatternTable = ((value >> 4) & 1) != 0;
+			_ctrlBackgroundPatternTable = (byte)((value >> 4) & 1);
 			_ctrlSpritePatternTable = ((value >> 3) & 1) != 0;
 			_ctrlAddrIncrMode = ((value >> 2) & 1) != 0;
 			_ctrlBaseNametableAddr = (byte)(value & 0b11);
@@ -87,6 +100,8 @@ internal sealed class Ppu
 			((_statusSprite0Hit ? 1 : 0) << 6)
 		);
 	}
+
+	public int OamWaitCycles { get; private set; } = 0;
 
 	public Ppu(CpuBus cpuBus)
 	{
@@ -113,8 +128,12 @@ internal sealed class Ppu
 			case 0x2001: // PPUMASK - write only
 				return 0xFF;
 			case 0x2002: // PPUSTATUS - read only
-				_writeLatch = false; // Reset write latch
-				return RegStatus;
+				{
+					_regW = false; // Reset write latch
+					var ret = RegStatus;
+					StatusVblank = false;
+					return ret;
+				}
 			case 0x2003: // OAMADDR - write only
 				return 0xFF;
 			case 0x2004: // OAMDATA - read/write
@@ -124,23 +143,23 @@ internal sealed class Ppu
 			case 0x2007: // PPUDATA
 				{
 					byte ret;
-					if (_regAddr is >= 0x3F00 and < 0x4000) // Palette
+					if (_regV is >= 0x3F00 and < 0x4000) // Palette
 					{
-						ret = _regData = Bus.ReadByte(_regAddr);
-						_regData = Bus.ReadByte((ushort)(_regAddr - 0x1000));
+						ret = _regData = Bus.ReadByte(_regV);
+						_regData = Bus.ReadByte((ushort)(_regV - 0x1000));
 					}
 					else // VRAM
 					{
 						ret = _regData;
-						_regData = Bus.ReadByte(_regAddr);
+						_regData = Bus.ReadByte(_regV);
 					}
 
 					if (_ctrlAddrIncrMode)
 					{
-						_regAddr += 32;
+						_regV += 32;
 					}
 					else
-						_regAddr++;
+						_regV++;
 
 					return ret;
 				}
@@ -158,6 +177,12 @@ internal sealed class Ppu
 		{
 			case 0x2000: // PPUCTRL - write only
 				RegCtrl = value;
+				_regT &= 0b1110011_11111111;
+				_regT |= (ushort)((value & 0b11) << 10);
+				break;
+			case 0x2001: // PPUMASK - write only
+				_maskShowBackground = ((value >> 3) & 1) != 0;
+				_maskShowSprites = ((value >> 4) & 1) != 0;
 				break;
 			case 0x2003: // OAMADDR - write only
 				_oamAddr = value;
@@ -166,35 +191,45 @@ internal sealed class Ppu
 				_oam[_oamAddr++] = value;
 				break;
 			case 0x2005: // PPUSCROLL - write only
-				if (_writeLatch)
+				if (!_regW)
 				{
-					_scrollY = value;
+					_regT &= 0b1111111_11100000;
+					_regT |= (ushort)((value >> 3) & 0b11111);
+					_regX = (byte)(value & 0b111);
+					_regW = true;
 				}
 				else
 				{
-					_scrollX = value;
+					_regT &= 0b0001100_00011111;
+					_regT |= (ushort)((value & 0b111) << 12);
+					_regT |= (ushort)(((value >> 3) & 0b11111) << 5);
+					_regW = false;
 				}
-				_writeLatch = !_writeLatch;
 				break;
 			case 0x2006: // PPUADDR
-				if (_writeLatch)
+				if (!_regW)
 				{
-					_regAddr |= value;
+					_regT &= 0b0000000_11111111;
+					_regT |= (ushort)((value & 0b111111) << 8);
+					_regW = true;
 				}
 				else
 				{
-					_regAddr = (ushort)(value << 8);
+					_regT &= 0b1111111_00000000;
+					_regT |= value;
+					_regV = _regT;
+					_regHackAddr = _regT;
+					_regW = false;
 				}
-				_writeLatch = !_writeLatch;
 				break;
 			case 0x2007: // PPUDATA
-				Bus.WriteByte(_regAddr, value);
+				Bus.WriteByte(_regV, value);
 				if (_ctrlAddrIncrMode)
 				{
-					_regAddr += 32;
+					_regV += 32;
 				}
 				else
-					_regAddr++;
+					_regV++;
 				break;
 			case 0x4014: // OAMDMA
 				var address = (ushort)(value << 8);
@@ -202,9 +237,8 @@ internal sealed class Ppu
 				{
 					_oam[(_oamAddr + i) & 0xFF] = _cpuBus.ReadByte(address);
 					address++;
-					if ((address & 0xFF) == 0)
-						address -= 0x0100;
 				}
+				OamWaitCycles = 514;
 				break;
 		}
 	}
@@ -219,50 +253,181 @@ internal sealed class Ppu
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public void Tick()
 	{
-		if (_cycle is >= 1 and <= 256)
+		if (OamWaitCycles > 0)
 		{
-			_step++;
-
-			var screenX = _cycle - 1;
-			if (screenX is >= 0 and < ScreenWidth && _scanline < ScreenHeight)
-				DrawPoint();
+			OamWaitCycles--;
 		}
 
-		if (_step == 8)
+		if (_scanline is (>= 0 and <= 239) or 261 && _cycle is (>= 321 and <= 336) or (>= 1 and <= 256))
 		{
-			_bgTileColumn++;
-			if (_bgTileColumn >= _tileColumns)
-				_bgTileColumn = 0;
+			FetchTileData();
 
-			_step = 0;
+			_bgPatternHighs <<= 1;
+			_bgPatternLows <<= 1;
+
+			if (_cycle % 8 == 0)
+			{
+				_bgPatternHighs |= _bgFetchPatternHigh;
+				_bgPatternLows |= _bgFetchPatternLow;
+
+				var coarseX = _regV & 0b11111;
+				var coarseY = (_regV >> 5) & 0b11111;
+
+				var bgPaletteIndex = ((coarseX >> 1) & 1, (coarseY >> 1) & 1) switch
+				{
+					(0, 0) => (_bgFetchAttribute >> 0) & 0b11,
+					(1, 0) => (_bgFetchAttribute >> 2) & 0b11,
+					(0, 1) => (_bgFetchAttribute >> 4) & 0b11,
+					(1, 1) => (_bgFetchAttribute >> 6) & 0b11,
+					_ => throw new UnreachableException()
+				};
+
+				_bgPalette <<= 2;
+				_bgPalette |= (ushort)bgPaletteIndex;
+			}
+		}
+
+		if (_scanline is >= 0 and <= 239 && _cycle is >= 4+4 and <= 259+4)
+		{
+			DrawPoint();
+		}
+
+		if (_scanline == 241 && _cycle == 1)
+		{
+			StatusVblank = true;
+			_statusSprite0Hit = false;
+			if (_ctrlEnableVblankNmi)
+				RequestVblankInterrupt = true;
+		}
+
+		if (_scanline == 261 && _cycle == 1)
+		{
+			StatusVblank = false;
+		}
+
+		// If rendering is enabled, the PPU increments the horizontal position in v many times across the scanline, it begins at dots
+		// 328 and 336, and will continue through the next scanline at 8, 16, 24... 240, 248, 256 (every 8 dots across the scanline until 256).
+		// Across the scanline the effective coarse X scroll coordinate is incremented repeatedly, which will also wrap to the next nametable appropriately.
+		// "Inc. hori(v)"
+		if (_scanline is (>= 0 and <= 239) or 261 && (_cycle is >= 328 or <= 256 && _cycle % 8 == 0 && _cycle != 0) && RenderingEnabled)
+		{
+			if ((_regV & 0x001F) == 31) // If "coarse x" is 31
+			{
+				_regV &= unchecked((ushort)~0x001F); // Coarse X = 0
+				_regV ^= 0x0400; // Switch horizontal nametable
+			}
+			else // Otherwise just increment coarse x
+				_regV++;
+		}
+
+		// If rendering is enabled, the PPU increments the vertical position in v.
+		// The effective Y scroll coordinate is incremented, which is a complex operation that will
+		// correctly skip the attribute table memory regions, and wrap to the next nametable appropriately.
+		// "Inc. vert(v)"
+		if (_scanline is (>= 0 and <= 239) or 261 && _cycle == 256 && RenderingEnabled)
+		{
+			if ((_regV & 0x7000) != 0x7000) // If "fine y" is less than 7, increment it
+			{
+				_regV += 0x1000;
+			}
+			else // Otherwise
+			{
+				_regV &= unchecked((ushort)~0x7000); // Set fine y to 0
+				var coarseY = (_regV & 0x03E0) >> 5;
+				if (coarseY == 29)
+				{
+					coarseY = 0;
+					_regV ^= 0x0800; // Switch vertical nametable
+				}
+				else if (coarseY == 31)
+					coarseY = 0;
+				else
+					coarseY++;
+				_regV = (ushort)((_regV & ~0x03E0) | (coarseY << 5));
+			}
+		}
+
+		// If rendering is enabled, the PPU copies all bits related to horizontal position from t to v.
+		// hori(v) = hori(t)
+		if (_scanline is (>= 0 and <= 239) or 261 && _cycle == 257 && RenderingEnabled)
+		{
+			// v: ....A.. ...BCDEF <- t: ....A.. ...BCDEF
+			ushort mask = 0b1111011_11100000;
+			_regV &= mask;
+			_regV |= (ushort)(_regT & (~mask & 0b1111111_11111111));
+		}
+
+		// If rendering is enabled, at the end of vblank, shortly after the horizontal bits are copied from t to v at dot 257,
+		// the PPU will repeatedly copy the vertical bits from t to v from dots 280 to 304, completing the full initialization of v from t.
+		// vert(v) = vert(t)
+		if (_scanline == 261 && (_cycle is >= 280 and <= 304) && RenderingEnabled) // PRERENDER SCANLINE
+		{
+			// v: GHIA.BC DEF..... <- t: GHIA.BC DEF.....
+			ushort mask = 0b0000100_00011111;
+			_regV &= mask;
+			_regV |= (ushort)(_regT & (~mask & 0b1111111_11111111));
 		}
 
 		_cycle++;
 		if (_cycle >= _cyclesPerScanline)
 		{
-			_scanline++;
-			if (_scanline % 8 == 0)
-				_bgTileRow++;
 			_cycle = 0;
-			switch (_scanline)
+
+			_scanline++;
+			if (_scanline == 262)
 			{
-				case 241: // End of visible scanlines
-					StatusVblank = true;
-					_statusSprite0Hit = false;
-					if (_ctrlEnableVblankNmi)
-						RequestVblankInterrupt = true;
-					break;
-				case 261: // Pre-render scanline
-					break;
-				case 262: // Wrap back to the start in the end
-					_nextPixelIndex = 0;
-					_scanline = 0;
-					_bgTileRow = 0;
-					StatusVblank = false;
-					_wasSprite0HitThisFrame = false;
-					break;
+				_scanline = 0;
+
+				_nextPixelIndex = 0;
+				_wasSprite0HitThisFrame = false;
 			}
 		}
+	}
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	private void FetchTileData()
+	{
+		switch (_fetchStep)
+		{
+			case 0:
+				_bgFetchAddress = (ushort)(0x2000 | (_regV & 0x0FFF));
+				break;
+			case 1: // Nametable byte
+				_bgFetchTile = Bus.ReadByte(_bgFetchAddress);
+				break;
+			case 2:
+				_bgFetchAddress = (ushort)(0x23C0 | (_regV & 0x0C00) | ((_regV >> 4) & 0x38) | ((_regV >> 2) & 0x07));
+				break;
+			case 3: // Attribute byte
+				_bgFetchAttribute = Bus.ReadByte(_bgFetchAddress);
+				break;
+			case 4:
+				{
+					var bgTileY = (_regV >> 12) & 0b111;
+					var bgPatternTable = _ctrlBackgroundPatternTable << 12;
+					var bgPatternOffset = (ushort)bgPatternTable | (ushort)(_bgFetchTile << 4) | bgTileY;
+					_bgFetchAddress = (ushort)(bgPatternOffset);
+					break;
+				}
+			case 5:
+				_bgFetchPatternLow = Bus.ReadByte(_bgFetchAddress);
+				break;
+			case 6:
+				{
+
+					var bgTileY = (_regV >> 12) & 0b111;
+					var bgPatternTable = _ctrlBackgroundPatternTable << 12;
+					var bgPatternOffset = (ushort)bgPatternTable | (ushort)(_bgFetchTile << 4) | bgTileY;
+					_bgFetchAddress = ((ushort)(bgPatternOffset + 8));
+					break;
+				}
+			case 7:
+				_bgFetchPatternHigh = Bus.ReadByte(_bgFetchAddress);
+				break;
+		}
+
+		_fetchStep++;
+		_fetchStep %= 8;
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -270,7 +435,7 @@ internal sealed class Ppu
 	{
 		var spritePatternTable = _ctrlSpritePatternTable ? PpuBus.PatternTable1Address : PpuBus.PatternTable0Address;
 
-		var screenX = _cycle - 1;
+		var screenX = _cycle - 8;
 
 		Color spriteColor = Color.Transparent;
 		var sprite0 = false;
@@ -329,68 +494,33 @@ internal sealed class Ppu
 			}
 		}
 
-		var nametableAddress = _ctrlBaseNametableAddr switch
+		if (_maskShowBackground)
 		{
-			0 => PpuBus.Nametable0Address,
-			1 => PpuBus.Nametable1Address,
-			2 => PpuBus.Nametable2Address,
-			3 => PpuBus.Nametable3Address,
-			_ => throw new UnreachableException()
-		};
+			var bgPaletteOffset = PpuBus.PaletteRamAddress + 1 + (((_bgPalette >> 4) & 0b11) * 4);
 
-		var tileCol = screenX / 8;
-		var tileRow = _scanline / 8;
+			var bgColorIndex = (((_bgPatternHighs >> (15 - _regX)) & 1) << 1) | ((_bgPatternLows >> (15 - _regX)) & 1);
+			var bgColor = bgColorIndex switch
+			{
+				0 => _palette[Bus.ReadByte(PpuBus.PaletteRamAddress)],
+				1 => _palette[Bus.ReadByte((ushort)(bgPaletteOffset + 0))],
+				2 => _palette[Bus.ReadByte((ushort)(bgPaletteOffset + 1))],
+				3 => _palette[Bus.ReadByte((ushort)(bgPaletteOffset + 2))],
+				_ => throw new UnreachableException()
+			};
 
-		var tileIndex = tileCol + (tileRow * _tileColumns);
-		var bgNametableByte = Bus.ReadByte((ushort)(nametableAddress + tileIndex));
+			// Sprite is transparent
+			if (spriteColor == Color.Transparent)
+			{
+				Framebuffer[_nextPixelIndex++] = bgColor;
+				return;
+			}
 
-		var attribIndex = (tileRow / 4 * 8) + (tileCol / 4);
-
-		var bgAttribute = Bus.ReadByte((ushort)(nametableAddress + 0x03C0 + attribIndex));
-
-		var bgTileY = (_scanline & 0b111);
-		var bgPatternTable = _ctrlBackgroundPatternTable ? PpuBus.PatternTable1Address : PpuBus.PatternTable0Address;
-		var bgPatternOffset = bgPatternTable + (bgNametableByte * 16);
-
-		var bgPatternLow = Bus.ReadByte((ushort)(bgPatternOffset + bgTileY));
-		var bgPatternHigh = Bus.ReadByte((ushort)(bgPatternOffset + bgTileY + 8));
-
-		var bgTileX = screenX & 0b111;
-
-		Color bgColor;
-		var bgPaletteIndex = (tileCol % 4 / 2, tileRow % 4 / 2) switch
-		{
-			(0, 0) => bgAttribute & 0b11,
-			(1, 0) => (bgAttribute >> 2) & 0b11,
-			(0, 1) => (bgAttribute >> 4) & 0b11,
-			(1, 1) => (bgAttribute >> 6) & 0b11,
-			_ => throw new UnreachableException()
-		};
-
-		var bgPaletteOffset = PpuBus.PaletteRamAddress + 1 + (bgPaletteIndex * 4);
-
-		var bgColorIndex = (((bgPatternHigh >> (7 - bgTileX)) & 1) << 1) | ((bgPatternLow >> (7 - bgTileX)) & 1);
-		bgColor = bgColorIndex switch
-		{
-			0 => _palette[Bus.ReadByte(PpuBus.PaletteRamAddress)],
-			1 => _palette[Bus.ReadByte((ushort)(bgPaletteOffset + 0))],
-			2 => _palette[Bus.ReadByte((ushort)(bgPaletteOffset + 1))],
-			3 => _palette[Bus.ReadByte((ushort)(bgPaletteOffset + 2))],
-			_ => throw new UnreachableException()
-		};
-
-		// Sprite is transparent
-		if (spriteColor == Color.Transparent)
-		{
-			Framebuffer[_nextPixelIndex++] = bgColor;
-			return;
-		}
-
-		// Background is also opaque and sprite is sprite 0
-		if (bgColorIndex != 0 && sprite0 && !_wasSprite0HitThisFrame)
-		{
-			_statusSprite0Hit = true;
-			_wasSprite0HitThisFrame = true;
+			// Background is also opaque and sprite is sprite 0
+			if (bgColorIndex != 0 && sprite0 && !_wasSprite0HitThisFrame)
+			{
+				_statusSprite0Hit = true;
+				_wasSprite0HitThisFrame = true;
+			}
 		}
 
 		Framebuffer[_nextPixelIndex++] = spriteColor;

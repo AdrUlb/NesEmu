@@ -1,6 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
-
-namespace NesEmu.Mappers;
+﻿namespace NesEmu.Mappers;
 
 internal sealed class Mapper0 : Mapper
 {

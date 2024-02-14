@@ -29,7 +29,7 @@ internal sealed class Emu
 		Cpu.Bus.Ppu = Ppu;
 		Cpu.Bus.Controller = Controller;
 
-		using (var fs = File.OpenRead(@"C:\Stuff\Roms\NES\mario.nes"))
+		using (var fs = File.OpenRead(@"C:\Stuff\Roms\NES\donkeykong.nes"))
 		{
 			var cart = new Cartridge(Ppu, fs);
 			Cpu.Bus.Cartridge = cart;
@@ -58,7 +58,8 @@ internal sealed class Emu
 					Cpu.RequestNmi();
 				}
 
-				Cpu.Tick();
+				if (Ppu.OamWaitCycles == 0)
+					Cpu.Tick();
 				var wasVblank = Ppu.StatusVblank;
 				Ppu.Ticks(3);
 				if (!wasVblank && Ppu.StatusVblank)
