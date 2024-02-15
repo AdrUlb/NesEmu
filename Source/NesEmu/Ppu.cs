@@ -27,7 +27,7 @@ internal sealed class Ppu
 
 	private ushort _regHackAddr;
 
-	private int _fetchStep = 1;
+	private int _fetchStep = 0;
 
 	private ushort _bgFetchAddress;
 	private byte _bgFetchTile;
@@ -258,103 +258,93 @@ internal sealed class Ppu
 			OamWaitCycles--;
 		}
 
-		if (_scanline is (>= 0 and <= 239) or 261 && _cycle is (>= 321 and <= 336) or (>= 1 and <= 256))
-		{
-			FetchTileData();
-
-			_bgPatternHighs <<= 1;
-			_bgPatternLows <<= 1;
-
-			if (_cycle % 8 == 0)
-			{
-				_bgPatternHighs |= _bgFetchPatternHigh;
-				_bgPatternLows |= _bgFetchPatternLow;
-
-				var coarseX = _regV & 0b11111;
-				var coarseY = (_regV >> 5) & 0b11111;
-
-				var bgPaletteIndex = ((coarseX >> 1) & 1, (coarseY >> 1) & 1) switch
-				{
-					(0, 0) => (_bgFetchAttribute >> 0) & 0b11,
-					(1, 0) => (_bgFetchAttribute >> 2) & 0b11,
-					(0, 1) => (_bgFetchAttribute >> 4) & 0b11,
-					(1, 1) => (_bgFetchAttribute >> 6) & 0b11,
-					_ => throw new UnreachableException()
-				};
-
-				_bgPalette <<= 2;
-				_bgPalette |= (ushort)bgPaletteIndex;
-			}
-		}
-
-		if (_scanline is >= 0 and <= 239 && _cycle is >= 4+4 and <= 259+4)
+		if (_scanline is >= 0 and <= 239 && _cycle is >= 1 and <= 256)
 		{
 			DrawPoint();
 		}
 
-		if (_scanline == 241 && _cycle == 1)
+		if (_scanline is (>= 0 and <= 239) or 261)
 		{
-			StatusVblank = true;
-			_statusSprite0Hit = false;
-			if (_ctrlEnableVblankNmi)
-				RequestVblankInterrupt = true;
-		}
-
-		if (_scanline == 261 && _cycle == 1)
-		{
-			StatusVblank = false;
-		}
-
-		// If rendering is enabled, the PPU increments the horizontal position in v many times across the scanline, it begins at dots
-		// 328 and 336, and will continue through the next scanline at 8, 16, 24... 240, 248, 256 (every 8 dots across the scanline until 256).
-		// Across the scanline the effective coarse X scroll coordinate is incremented repeatedly, which will also wrap to the next nametable appropriately.
-		// "Inc. hori(v)"
-		if (_scanline is (>= 0 and <= 239) or 261 && (_cycle is >= 328 or <= 256 && _cycle % 8 == 0 && _cycle != 0) && RenderingEnabled)
-		{
-			if ((_regV & 0x001F) == 31) // If "coarse x" is 31
+			if (_cycle is (>= 1 and <= 256) or (>= 321 and <= 336))
 			{
-				_regV &= unchecked((ushort)~0x001F); // Coarse X = 0
-				_regV ^= 0x0400; // Switch horizontal nametable
-			}
-			else // Otherwise just increment coarse x
-				_regV++;
-		}
+				FetchTileData();
 
-		// If rendering is enabled, the PPU increments the vertical position in v.
-		// The effective Y scroll coordinate is incremented, which is a complex operation that will
-		// correctly skip the attribute table memory regions, and wrap to the next nametable appropriately.
-		// "Inc. vert(v)"
-		if (_scanline is (>= 0 and <= 239) or 261 && _cycle == 256 && RenderingEnabled)
-		{
-			if ((_regV & 0x7000) != 0x7000) // If "fine y" is less than 7, increment it
-			{
-				_regV += 0x1000;
-			}
-			else // Otherwise
-			{
-				_regV &= unchecked((ushort)~0x7000); // Set fine y to 0
-				var coarseY = (_regV & 0x03E0) >> 5;
-				if (coarseY == 29)
+				_bgPatternHighs <<= 1;
+				_bgPatternLows <<= 1;
+
+				if (_fetchStep == 0)
 				{
-					coarseY = 0;
-					_regV ^= 0x0800; // Switch vertical nametable
-				}
-				else if (coarseY == 31)
-					coarseY = 0;
-				else
-					coarseY++;
-				_regV = (ushort)((_regV & ~0x03E0) | (coarseY << 5));
-			}
-		}
+					var coarseX = _regV & 0b11111;
+					var coarseY = (_regV >> 5) & 0b11111;
 
-		// If rendering is enabled, the PPU copies all bits related to horizontal position from t to v.
-		// hori(v) = hori(t)
-		if (_scanline is (>= 0 and <= 239) or 261 && _cycle == 257 && RenderingEnabled)
-		{
-			// v: ....A.. ...BCDEF <- t: ....A.. ...BCDEF
-			ushort mask = 0b1111011_11100000;
-			_regV &= mask;
-			_regV |= (ushort)(_regT & (~mask & 0b1111111_11111111));
+					var bgPaletteIndex = ((coarseX >> 1) & 1, (coarseY >> 1) & 1) switch
+					{
+						(0, 0) => (_bgFetchAttribute >> 0) & 0b11,
+						(1, 0) => (_bgFetchAttribute >> 2) & 0b11,
+						(0, 1) => (_bgFetchAttribute >> 4) & 0b11,
+						(1, 1) => (_bgFetchAttribute >> 6) & 0b11,
+						_ => throw new UnreachableException()
+					};
+
+					_bgPalette <<= 2;
+					_bgPalette |= (ushort)bgPaletteIndex;
+
+					_bgPatternHighs |= _bgFetchPatternHigh;
+					_bgPatternLows |= _bgFetchPatternLow;
+				}
+			}
+
+			// If rendering is enabled, the PPU increments the horizontal position in v many times across the scanline, it begins at dots
+			// 328 and 336, and will continue through the next scanline at 8, 16, 24... 240, 248, 256 (every 8 dots across the scanline until 256).
+			// Across the scanline the effective coarse X scroll coordinate is incremented repeatedly, which will also wrap to the next nametable appropriately.
+			// "Inc. hori(v)"
+			if (_cycle is (>= 8 and < 256) or (>= 328 and <= 336) && _cycle % 8 == 0 && _cycle != 0 && RenderingEnabled)
+			{
+				if ((_regV & 0x001F) == 31) // If "coarse x" is 31
+				{
+					_regV &= unchecked((ushort)~0x001F); // Coarse X = 0
+					_regV ^= 0x0400; // Switch horizontal nametable
+				}
+				else // Otherwise just increment coarse x
+					_regV++;
+			}
+
+			// If rendering is enabled, the PPU increments the vertical position in v.
+			// The effective Y scroll coordinate is incremented, which is a complex operation that will
+			// correctly skip the attribute table memory regions, and wrap to the next nametable appropriately.
+			// "Inc. vert(v)"
+			if (_cycle == 256 && RenderingEnabled)
+			{
+				if ((_regV & 0x7000) != 0x7000) // If "fine y" is less than 7, increment it
+				{
+					_regV += 0x1000;
+				}
+				else // Otherwise
+				{
+					_regV &= unchecked((ushort)~0x7000); // Set fine y to 0
+					var coarseY = (_regV & 0x03E0) >> 5;
+					if (coarseY == 29)
+					{
+						coarseY = 0;
+						_regV ^= 0x0800; // Switch vertical nametable
+					}
+					else if (coarseY == 31)
+						coarseY = 0;
+					else
+						coarseY++;
+					_regV = (ushort)((_regV & ~0x03E0) | (coarseY << 5));
+				}
+			}
+
+			// If rendering is enabled, the PPU copies all bits related to horizontal position from t to v.
+			// hori(v) = hori(t)
+			if (_cycle == 257 && RenderingEnabled)
+			{
+				// v: ....A.. ...BCDEF <- t: ....A.. ...BCDEF
+				ushort mask = 0b1111011_11100000;
+				_regV &= mask;
+				_regV |= (ushort)(_regT & (~mask & 0b1111111_11111111));
+			}
 		}
 
 		// If rendering is enabled, at the end of vblank, shortly after the horizontal bits are copied from t to v at dot 257,
@@ -366,6 +356,19 @@ internal sealed class Ppu
 			ushort mask = 0b0000100_00011111;
 			_regV &= mask;
 			_regV |= (ushort)(_regT & (~mask & 0b1111111_11111111));
+		}
+
+		if (_scanline == 241 && _cycle == 1)
+		{
+			StatusVblank = true;
+			if (_ctrlEnableVblankNmi)
+				RequestVblankInterrupt = true;
+		}
+
+		if (_scanline == 261 && _cycle == 1)
+		{
+			_statusSprite0Hit = false;
+			StatusVblank = false;
 		}
 
 		_cycle++;
@@ -435,11 +438,12 @@ internal sealed class Ppu
 	{
 		var spritePatternTable = _ctrlSpritePatternTable ? PpuBus.PatternTable1Address : PpuBus.PatternTable0Address;
 
-		var screenX = _cycle - 8;
+		var screenX = _cycle - 1;
 
 		Color spriteColor = Color.Transparent;
 		var sprite0 = false;
 
+		if (_maskShowSprites)
 		{
 			for (var i = 0; i < 64; i++)
 			{
@@ -496,7 +500,8 @@ internal sealed class Ppu
 
 		if (_maskShowBackground)
 		{
-			var bgPaletteOffset = PpuBus.PaletteRamAddress + 1 + (((_bgPalette >> 4) & 0b11) * 4);
+			var pal = (_bgPalette >> (((8 - _regX) > screenX % 8) ? 2 : 0)) & 0b11;
+			var bgPaletteOffset = PpuBus.PaletteRamAddress + 1 + (pal * 4);
 
 			var bgColorIndex = (((_bgPatternHighs >> (15 - _regX)) & 1) << 1) | ((_bgPatternLows >> (15 - _regX)) & 1);
 			var bgColor = bgColorIndex switch

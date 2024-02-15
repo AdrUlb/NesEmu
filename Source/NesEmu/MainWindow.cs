@@ -14,7 +14,7 @@ internal class MainWindow : Window
 	public MainWindow() : base(resizable: false)
 	{
 		Title = "Adrian's NES Emulator";
-		Size = new(256 * 2, 240 * 2);
+		Size = new(256 * 3, 240 * 3);
 		_emu.Vblank += (_, _) => _waitForVblank = false;
 	}
 

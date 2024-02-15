@@ -29,6 +29,7 @@ internal sealed class Mapper1 : Mapper
 		if (chrRomBanks == 0)
 			chrRomSize = 0x2000;
 
+
 		_prgRom = new byte[prgRomSize];
 		_chrRom = new byte[chrRomSize];
 
