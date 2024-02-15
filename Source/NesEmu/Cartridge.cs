@@ -25,6 +25,8 @@ internal sealed class Cartridge
 
 		Console.WriteLine($"Mapper: {mapperNumber}");
 		Console.WriteLine($"Mirroring: {mirroringMode}");
+		Console.WriteLine($"PRG: {prgRomBanks}*16K");
+		Console.WriteLine($"CHR: {chrRomBanks}*8K");
 
 		_mapper = mapperNumber switch
 		{
