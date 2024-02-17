@@ -25,8 +25,6 @@ internal sealed class Ppu
 	private ushort _regV;
 	private ushort _regT;
 
-	private ushort _regHackAddr;
-
 	private int _fetchStep = 0;
 
 	private ushort _bgFetchAddress;
@@ -223,7 +221,6 @@ internal sealed class Ppu
 					_regT &= 0b1111111_00000000;
 					_regT |= value;
 					_regV = _regT;
-					_regHackAddr = _regT;
 					_regW = false;
 				}
 				break;
