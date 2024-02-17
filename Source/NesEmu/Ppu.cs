@@ -276,6 +276,7 @@ internal sealed class Ppu
 
 					var y = _scanline - yPos;
 
+
 					if (y is < 0 or >= 8)
 						continue;
 
@@ -307,6 +308,9 @@ internal sealed class Ppu
 						{
 							var off = i * 4;
 							var yPos = _secondaryOam[off + 0];
+
+							if (yPos == 0xFF)
+								continue;
 
 							var y = _scanline - yPos;
 
@@ -345,6 +349,9 @@ internal sealed class Ppu
 
 							if (color == Color.Transparent)
 								continue;
+
+							if (screenX == ScreenWidth - 1)
+								Console.WriteLine(yPos);
 
 							_spritePixels[screenX] = color;
 							_sprite0Mask[screenX] = i == 0 && _spriteScanlineHasSprite0;

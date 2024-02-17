@@ -29,7 +29,7 @@ internal sealed class Emu
 		Cpu.Bus.Ppu = Ppu;
 		Cpu.Bus.Controller = Controller;
 
-		using (var fs = File.OpenRead(@"C:\Stuff\Roms\NES\tetris.nes"))
+		using (var fs = File.OpenRead(@"C:\Stuff\Roms\NES\drmario.nes"))
 		{
 			var cart = new Cartridge(Ppu, fs);
 			Cpu.Bus.Cartridge = cart;
@@ -74,7 +74,7 @@ internal sealed class Emu
 			while (thisTime - lastTime < _ticksPerFrame);
 			lastTime = thisTime;
 
-			Console.WriteLine($"Frame took {sw.Elapsed.TotalMilliseconds}ms");
+			//Console.WriteLine($"Frame took {sw.Elapsed.TotalMilliseconds}ms");
 			sw.Restart();
 		}
 	}
