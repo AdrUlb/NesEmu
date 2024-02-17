@@ -74,8 +74,8 @@ internal sealed class Emu
 			while (thisTime - lastTime < _ticksPerFrame);
 			lastTime = thisTime;
 
-			//Console.WriteLine($"Frame took {sw.Elapsed.TotalMilliseconds}ms");
-			//sw.Restart();
+			Console.WriteLine($"Frame took {sw.Elapsed.TotalMilliseconds}ms");
+			sw.Restart();
 		}
 	}
 

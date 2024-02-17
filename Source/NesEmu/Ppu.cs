@@ -34,10 +34,14 @@ internal sealed class Ppu
 	private byte _bgFetchAttribute;
 	private byte _bgFetchPatternLow;
 	private byte _bgFetchPatternHigh;
-
 	private ushort _bgPatternLows;
 	private ushort _bgPatternHighs;
-	private uint _bgPalette;
+	private byte _bgPalette;
+
+	private readonly Color[] _spritePixels = new Color[ScreenWidth];
+	private readonly bool[] _sprite0Mask = new bool[ScreenWidth];
+	private readonly bool[] _spritePriorities = new bool[ScreenWidth];
+	private bool _spriteScanlineHasSprite0 = false;
 
 	private bool _ctrlEnableVblankNmi = false;
 	private bool _ctrlMasterSlaveSelect = false;
@@ -57,6 +61,7 @@ internal sealed class Ppu
 
 	private readonly Color[] _palette = new Color[64];
 	private readonly byte[] _oam = new byte[256];
+	private readonly byte[] _secondaryOam = new byte[32];
 
 	public readonly byte[] Vram = new byte[0x800];
 	public readonly Color[] Framebuffer = new Color[ScreenWidth * ScreenHeight];
@@ -258,6 +263,102 @@ internal sealed class Ppu
 			OamWaitCycles--;
 		}
 
+		if (_scanline is >= 0 and <= 239)
+		{
+			if (_cycle == 65) // TOOD: proper sprite evaluation, cycs 65-256
+			{
+				Array.Fill<byte>(_secondaryOam, 0xFF);
+
+				_spriteScanlineHasSprite0 = false;
+
+				var spriteCount = 0;
+				for (var i = 0; i < 64; i++)
+				{
+					var off = i * 4;
+					var yPos = _oam[off + 0];
+
+					var y = _scanline - yPos;
+
+					if (y is < 0 or >= 8)
+						continue;
+
+					_secondaryOam[(spriteCount * 4) + 0] = _oam[off + 0];
+					_secondaryOam[(spriteCount * 4) + 1] = _oam[off + 1];
+					_secondaryOam[(spriteCount * 4) + 2] = _oam[off + 2];
+					_secondaryOam[(spriteCount * 4) + 3] = _oam[off + 3];
+					spriteCount++;
+					if (i == 0)
+						_spriteScanlineHasSprite0 = true;
+
+					if (spriteCount == 8)
+						break;
+				}
+			}
+
+			if (_cycle == 257) // TOOD: proper sprite fetching, cycs 257-320
+			{
+
+				Array.Fill(_spritePixels, Color.Transparent);
+				Array.Fill(_sprite0Mask, false);
+				for (var screenX = 0; screenX < ScreenWidth; screenX++)
+				{
+					_spritePixels[screenX] = Color.Transparent;
+					var spritePatternTable = _ctrlSpritePatternTable ? PpuBus.PatternTable1Address : PpuBus.PatternTable0Address;
+					if (_maskShowSprites)
+					{
+						for (var i = 0; i < 8; i++)
+						{
+							var off = i * 4;
+							var yPos = _secondaryOam[off + 0];
+
+							var y = _scanline - yPos;
+
+							var tileId = _secondaryOam[off + 1];
+							var attrib = _secondaryOam[off + 2];
+							var xPos = _secondaryOam[off + 3];
+
+							var x = screenX - xPos;
+
+							if (x is < 0 or >= 8)
+								continue;
+
+							var paletteIndex = attrib & 0b11;
+							var tileOff = (tileId * 16) + spritePatternTable;
+
+							var paletteOffset = PpuBus.PaletteRamAddress + 0x11 + (paletteIndex * 4);
+
+							var flipX = (attrib & (1 << 6)) != 0;
+							var flipY = (attrib & (1 << 7)) != 0;
+
+							var flippedX = flipX ? x : 7 - x;
+							var flippedY = flipY ? 7 - y : y;
+
+							var msb = Bus.ReadByte((ushort)(tileOff + flippedY + 8));
+							var lsb = Bus.ReadByte((ushort)(tileOff + flippedY));
+
+							var colorIndex = (((msb >> flippedX) & 1) << 1) | ((lsb >> flippedX) & 1);
+							var color = colorIndex switch
+							{
+								0 => Color.Transparent,
+								1 => _palette[Bus.ReadByte((ushort)(paletteOffset + 0))],
+								2 => _palette[Bus.ReadByte((ushort)(paletteOffset + 1))],
+								3 => _palette[Bus.ReadByte((ushort)(paletteOffset + 2))],
+								_ => throw new UnreachableException()
+							};
+
+							if (color == Color.Transparent)
+								continue;
+
+							_spritePixels[screenX] = color;
+							_sprite0Mask[screenX] = i == 0 && _spriteScanlineHasSprite0;
+							_spritePriorities[screenX] = ((attrib >> 5) & 1) != 0;
+							break;
+						}
+					}
+				}
+			}
+		}
+
 		if (_scanline is >= 0 and <= 239 && _cycle is >= 1 and <= 256)
 		{
 			DrawPoint();
@@ -267,7 +368,7 @@ internal sealed class Ppu
 		{
 			if (_cycle is (>= 1 and <= 256) or (>= 321 and <= 336))
 			{
-				FetchTileData();
+				FetchBackground();
 
 				_bgPatternHighs <<= 1;
 				_bgPatternLows <<= 1;
@@ -287,7 +388,7 @@ internal sealed class Ppu
 					};
 
 					_bgPalette <<= 2;
-					_bgPalette |= (ushort)bgPaletteIndex;
+					_bgPalette |= (byte)bgPaletteIndex;
 
 					_bgPatternHighs |= _bgFetchPatternHigh;
 					_bgPatternLows |= _bgFetchPatternLow;
@@ -388,7 +489,7 @@ internal sealed class Ppu
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	private void FetchTileData()
+	private void FetchBackground()
 	{
 		switch (_fetchStep)
 		{
@@ -436,98 +537,58 @@ internal sealed class Ppu
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	private void DrawPoint()
 	{
-		var spritePatternTable = _ctrlSpritePatternTable ? PpuBus.PatternTable1Address : PpuBus.PatternTable0Address;
+		// If rendering is disabled, render EXT color
+		if (!RenderingEnabled)
+		{
+			Framebuffer[_nextPixelIndex++] = _palette[Bus.ReadByte(PpuBus.PaletteRamAddress)];
+			return;
+		}
 
 		var screenX = _cycle - 1;
 
-		Color spriteColor = Color.Transparent;
-		var sprite0 = false;
+		var spriteColor = _spritePixels[screenX];
+		var sprite0 = _sprite0Mask[screenX];
 
-		if (_maskShowSprites)
+		var pal = (_bgPalette >> (((8 - _regX) > screenX % 8) ? 2 : 0)) & 0b11;
+		var bgPaletteOffset = PpuBus.PaletteRamAddress + 1 + (pal * 4);
+
+		var bgColorIndex = (((_bgPatternHighs >> (15 - _regX)) & 1) << 1) | ((_bgPatternLows >> (15 - _regX)) & 1);
+
+		// If the background is disabled or rendering color index 0
+		if (!_maskShowBackground || bgColorIndex == 0)
 		{
-			for (var i = 0; i < 64; i++)
-			{
-				var off = i * 4;
-				var yPos = _oam[off + 0] + 1;
-
-				var y = _scanline - yPos;
-
-				if (y is < 0 or >= 8)
-					continue;
-
-				var tileId = _oam[off + 1];
-				var attrib = _oam[off + 2];
-				var xPos = _oam[off + 3];
-
-				var x = screenX - xPos;
-
-				if (x is < 0 or >= 8)
-					continue;
-
-				var paletteIndex = attrib & 0b11;
-				var tileOff = (tileId * 16) + spritePatternTable;
-
-				var paletteOffset = PpuBus.PaletteRamAddress + 0x11 + (paletteIndex * 4);
-
-				var flipX = (attrib & (1 << 6)) != 0;
-				var flipY = (attrib & (1 << 7)) != 0;
-
-				var flippedX = flipX ? x : 7 - x;
-				var flippedY = flipY ? 7 - y : y;
-
-				var msb = Bus.ReadByte((ushort)(tileOff + flippedY + 8));
-				var lsb = Bus.ReadByte((ushort)(tileOff + flippedY));
-
-				var colorIndex = (((msb >> flippedX) & 1) << 1) | ((lsb >> flippedX) & 1);
-				spriteColor = colorIndex switch
-				{
-					0 => Color.Transparent,
-					1 => _palette[Bus.ReadByte((ushort)(paletteOffset + 0))],
-					2 => _palette[Bus.ReadByte((ushort)(paletteOffset + 1))],
-					3 => _palette[Bus.ReadByte((ushort)(paletteOffset + 2))],
-					_ => throw new UnreachableException()
-				};
-
-				if (spriteColor == Color.Transparent)
-					continue;
-
-				if (i == 0)
-					sprite0 = true;
-
-				break;
-			}
+			if (spriteColor == Color.Transparent) // No sprite pixel here, render EXT
+				Framebuffer[_nextPixelIndex++] = _palette[Bus.ReadByte(PpuBus.PaletteRamAddress)];
+			else // Sprite pixel here, render sprite
+				Framebuffer[_nextPixelIndex++] = spriteColor;
+			return;
 		}
 
-		if (_maskShowBackground)
+		var bgColor = bgColorIndex switch
 		{
-			var pal = (_bgPalette >> (((8 - _regX) > screenX % 8) ? 2 : 0)) & 0b11;
-			var bgPaletteOffset = PpuBus.PaletteRamAddress + 1 + (pal * 4);
+			1 => _palette[Bus.ReadByte((ushort)(bgPaletteOffset + 0))],
+			2 => _palette[Bus.ReadByte((ushort)(bgPaletteOffset + 1))],
+			3 => _palette[Bus.ReadByte((ushort)(bgPaletteOffset + 2))],
+			_ => throw new UnreachableException()
+		};
 
-			var bgColorIndex = (((_bgPatternHighs >> (15 - _regX)) & 1) << 1) | ((_bgPatternLows >> (15 - _regX)) & 1);
-			var bgColor = bgColorIndex switch
-			{
-				0 => _palette[Bus.ReadByte(PpuBus.PaletteRamAddress)],
-				1 => _palette[Bus.ReadByte((ushort)(bgPaletteOffset + 0))],
-				2 => _palette[Bus.ReadByte((ushort)(bgPaletteOffset + 1))],
-				3 => _palette[Bus.ReadByte((ushort)(bgPaletteOffset + 2))],
-				_ => throw new UnreachableException()
-			};
-
-			// Sprite is transparent
-			if (spriteColor == Color.Transparent)
-			{
-				Framebuffer[_nextPixelIndex++] = bgColor;
-				return;
-			}
-
-			// Background is also opaque and sprite is sprite 0
-			if (bgColorIndex != 0 && sprite0 && !_wasSprite0HitThisFrame)
-			{
-				_statusSprite0Hit = true;
-				_wasSprite0HitThisFrame = true;
-			}
+		// If sprite pixel is transparent, render background color
+		if (spriteColor == Color.Transparent)
+		{
+			Framebuffer[_nextPixelIndex++] = bgColor;
+			return;
 		}
 
-		Framebuffer[_nextPixelIndex++] = spriteColor;
+		// If sprite is sprite 0
+		if (sprite0 && !_wasSprite0HitThisFrame)
+		{
+			_statusSprite0Hit = true;
+			_wasSprite0HitThisFrame = true;
+		}
+
+		if (_spritePriorities[screenX]) // If the background priority bit is set, render background instead
+			Framebuffer[_nextPixelIndex++] = bgColor;
+		else
+			Framebuffer[_nextPixelIndex++] = spriteColor;
 	}
 }

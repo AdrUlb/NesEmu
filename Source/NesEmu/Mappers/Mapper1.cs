@@ -30,7 +30,7 @@ internal sealed class Mapper1 : Mapper
 	private int _chrBank0 = 0;
 	private int _chrBank1 = 1;
 
-	private ChrRomBankMode _chrRomBankMode = ChrRomBankMode.Switch8k;
+	private ChrRomBankMode _chrRomBankMode = ChrRomBankMode.Switch4k;
 	private PrgRomBankMode _prgRomBankMode = PrgRomBankMode.Switch32k;
 
 	private byte _shiftRegisterValue = 0;
