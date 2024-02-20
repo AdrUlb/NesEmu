@@ -1,3 +1,6 @@
 [submodule "External/RenderThing"]
 	path = External/RenderThing
 	url = https://github.com/AdrUlb/RenderThing
+[submodule "External/AudioThing"]
+	path = External/AudioThing
+	url = https://github.com/AdrUlb/AudioThing

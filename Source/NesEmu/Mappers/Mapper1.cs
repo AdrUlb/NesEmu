@@ -49,8 +49,8 @@ internal sealed class Mapper1 : Mapper
 		_prgRomBanks = prgRomBanks; // Number of 16k banks
 		_chrRomBanks = chrRomBanks; // Number of 8k banks
 
-		var prgRomSize = prgRomBanks * 0x4000;
-		var chrRomSize = chrRomBanks * 0x2000;
+		var prgRomSize = prgRomBanks * 0x4000; // 16384
+		var chrRomSize = chrRomBanks * 0x2000; // 8192
 
 		if (prgRomBanks is not >= 1)
 			throw new NotImplementedException();

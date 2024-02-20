@@ -122,7 +122,7 @@ internal sealed class Ppu
 		}
 	}
 
-	public byte ReadReg(int num)
+	public byte CpuReadByte(int num)
 	{
 		switch (num)
 		{
@@ -174,7 +174,7 @@ internal sealed class Ppu
 		}
 	}
 
-	public void WriteReg(int num, byte value)
+	public void CpuWriteByte(int num, byte value)
 	{
 		switch (num)
 		{
@@ -349,9 +349,6 @@ internal sealed class Ppu
 
 							if (color == Color.Transparent)
 								continue;
-
-							if (screenX == ScreenWidth - 1)
-								Console.WriteLine(yPos);
 
 							_spritePixels[screenX] = color;
 							_sprite0Mask[screenX] = i == 0 && _spriteScanlineHasSprite0;

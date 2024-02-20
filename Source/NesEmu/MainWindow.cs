@@ -56,6 +56,7 @@ internal class MainWindow : Window
 	protected override void OnStop()
 	{
 		_emu.Stop();
+		_emu.Dispose();
 		_tex.Dispose();
 	}
 

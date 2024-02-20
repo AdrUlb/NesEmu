@@ -7,10 +7,10 @@ internal sealed class Mapper0 : Mapper
 
 	public Mapper0(int prgRomBanks, int chrRomBanks, MirroringMode mirroringMode, Stream data)
 	{
-		var prgRomSize = prgRomBanks * 0x4000;
-		var chrRomSize = chrRomBanks * 0x2000;
+		var prgRomSize = prgRomBanks * 0x4000; // 16384
+		var chrRomSize = chrRomBanks * 0x2000; // 8192
 
-		if (prgRomBanks is not (>= 1 and <= 2))
+		if (prgRomBanks is not (1 or 2))
 			throw new NotImplementedException();
 
 		if (chrRomBanks is not 1)
