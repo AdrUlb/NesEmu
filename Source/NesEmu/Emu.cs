@@ -12,7 +12,7 @@ internal sealed class Emu : IDisposable
 	private const int _cyclesPerSecond = 21477272;
 	private const double _framesPerSecond = _cyclesPerSecond / 4.0 / 262.0 / 341.0;
 	private readonly double _ticksPerFrame = Stopwatch.Frequency / _framesPerSecond;
-	private const long _cyclesPerSample = _cyclesPerSecond / 44100;
+	private const long _cyclesPerSample = _cyclesPerSecond / (44100);
 
 	public event EventHandler? Vblank;
 	public readonly Cpu Cpu;
@@ -37,7 +37,7 @@ internal sealed class Emu : IDisposable
 		Cpu.Bus.Apu = Apu;
 		Cpu.Bus.Controller = Controller;
 
-		_audioPlayer = new(44100 - 100, 16, 1, AudioDataCallback, 2048);
+		_audioPlayer = new(44100, 16, 1, AudioDataCallback, 4096);
 
 		using (var fs = File.OpenRead(@"C:\Stuff\Roms\NES\mario.nes"))
 		{
@@ -57,6 +57,7 @@ internal sealed class Emu : IDisposable
 	private void EmuThreadProc()
 	{
 		double lastTime = Stopwatch.GetTimestamp();
+
 		_audioPlayer.Play();
 		while (_running)
 		{
@@ -73,15 +74,15 @@ internal sealed class Emu : IDisposable
 				}
 
 				if (cycles % 12 == 0 && Ppu.OamWaitCycles == 0)
+				{
 					Cpu.Tick();
+					Apu.Tick();
+				}
 
 				var wasVblank = Ppu.StatusVblank;
 
 				if (cycles % 4 == 0)
 					Ppu.Tick();
-
-				if (cycles % 24 == 0)
-					Apu.Tick();
 
 				if (cycles % _cyclesPerSample == 0)
 				{
@@ -94,21 +95,15 @@ internal sealed class Emu : IDisposable
 					Vblank?.Invoke(this, EventArgs.Empty);
 					break;
 				}
-
 			}
 
-			if (Console.KeyAvailable)
-			{
-				Console.ReadKey();
-				_audioSamples.Clear();
-			}
 			double thisTime;
 			do
 			{
 				thisTime = Stopwatch.GetTimestamp();
 			}
 			while (thisTime - lastTime < _ticksPerFrame);
-			//Console.WriteLine(Stopwatch.GetElapsedTime((long)lastTime).TotalMilliseconds);
+
 			lastTime = thisTime;
 		}
 
@@ -122,7 +117,7 @@ internal sealed class Emu : IDisposable
 		int i;
 		lock (_audioSamplesLock)
 		{
-			while (_audioSamples.Count > 4096 * 3)
+			while (_audioSamples.Count > 4096 * 4)
 				_audioSamples.Dequeue();
 
 			int sample = 0;
