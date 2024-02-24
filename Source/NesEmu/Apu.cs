@@ -1,12 +1,62 @@
-﻿using System.Collections.Concurrent;
-using System.Diagnostics;
-using System.Runtime.CompilerServices;
+﻿using System.Runtime.CompilerServices;
 
 namespace NesEmu;
 
 internal sealed class Apu
 {
+	// https://www.nesdev.org/wiki/APU_Envelope
+	private struct EnvelopeUnit
+	{
+		public bool RegLoopFlag;
+		public bool RegConstantVolumeFlag;
+		public int RegVolumeOrDividerReload;
+
+		public bool StartFlag;
+		private int _decayLevelCounter;
+		private int _divider;
+
+		public int Volume { get; private set; }
+
+		private void Divider()
+		{
+			// When the divider is clocked while at 0, it is loaded with V and clocks the decay level counter
+			if (_divider == 0)
+			{
+				_divider = RegVolumeOrDividerReload;
+
+				// Then one of two actions occurs:
+				if (_decayLevelCounter != 0) // If the counter is non-zero, it is decremented
+					_decayLevelCounter--;
+
+				else if (RegLoopFlag) // otherwise if the loop flag is set, the decay level counter is loaded with 15.
+				{
+					_decayLevelCounter = 15;
+				}
+			}
+			else
+				_divider--;
+		}
+
+		public void Step()
+		{
+			if (!StartFlag) // If the start flag is clear, the divider is clocked
+			{
+				Divider();
+			}
+			else // Otherwise the start flag is cleared, the decay level counter is loaded with 15, and the divider's period is immediately reloaded
+			{
+				StartFlag = false;
+				_decayLevelCounter = 15;
+				_divider = RegVolumeOrDividerReload;
+			}
+			Volume = RegConstantVolumeFlag ? RegVolumeOrDividerReload : _decayLevelCounter;
+		}
+	}
+
 	private readonly byte[] _dutyCycles = [0b00000001, 0b00000011, 0b00001111, 0b11111100];
+
+	private EnvelopeUnit _pulse1Envelope = new();
+	private EnvelopeUnit _pulse2Envelope = new();
 
 	private int _frameCounter = 0;
 	private int _frameCounterMode = 1;
@@ -16,29 +66,17 @@ internal sealed class Apu
 
 	private int _pulse1DutyCycle = 0;
 	private bool _pulse1LengthCounterHalt = false;
-	private bool _pulse1ConstantVolume = false;
-	private int _pulse1EnvelopeDividerReload = 0;
 	private int _pulse1LengthCounter = 0;
 	private int _pulse1TimerReload = 0;
 	private int _pulse1Timer = 0;
 	private int _pulse1DutyIndex = 0;
 
-	private bool _pulse1EnvelopeStartFlag = false;
-	private int _pulse1EnvelopeDivider = 0;
-	private int _pulse1EnvelopeDecayLevelCounter = 0;
-
 	private int _pulse2DutyCycle = 0;
 	private bool _pulse2LengthCounterHalt = false;
-	private bool _pulse2ConstantVolume = false;
-	private int _pulse2EnvelopeDividerReload = 0;
 	private int _pulse2LengthCounter = 0;
 	private int _pulse2TimerReload = 0;
 	private int _pulse2Timer = 0;
 	private int _pulse2DutyIndex = 0;
-
-	private bool _pulse2EnvelopeStartFlag = false;
-	private int _pulse2EnvelopeDivider = 0;
-	private int _pulse2EnvelopeDecayLevelCounter = 0;
 
 	private bool _dmcControlEnable = false;
 	private bool _pulse1LengthCounterEnable = false;
@@ -48,8 +86,6 @@ internal sealed class Apu
 
 	private int _pulse1SequencerOutput = 0;
 	private int _pulse2SequencerOutput = 0;
-	private int _pulse1Volume = 0;
-	private int _pulse2Volume = 0;
 
 	private ulong _cycles = 0;
 
@@ -78,8 +114,10 @@ internal sealed class Apu
 			case 0x4000:
 				_pulse1DutyCycle = (byte)((value >> 6) & 0b11);
 				_pulse1LengthCounterHalt = ((value >> 5) & 1) != 0;
-				_pulse1ConstantVolume = ((value >> 4) & 1) != 0;
-				_pulse1EnvelopeDividerReload = value & 0b1111;
+
+				_pulse1Envelope.RegLoopFlag = _pulse1LengthCounterHalt;
+				_pulse1Envelope.RegConstantVolumeFlag = ((value >> 4) & 1) != 0;
+				_pulse1Envelope.RegVolumeOrDividerReload = value & 0b1111;
 				break;
 			case 0x4002:
 				_pulse1TimerReload &= 0xFF00;
@@ -93,15 +131,18 @@ internal sealed class Apu
 					_pulse1LengthCounter = _lengthCounterLookupTable[((value >> 3) & 0b11111)];
 
 				_pulse1Timer = _pulse1TimerReload;
-				_pulse1EnvelopeStartFlag = true;
+				_pulse1Envelope.StartFlag = true;
+				//_pulse1EnvelopeStartFlag = true;
 				// Restart envelope
 				// Reset phase of pulse generator
 				break;
 			case 0x4004:
 				_pulse2DutyCycle = (byte)((value >> 6) & 0b11);
 				_pulse2LengthCounterHalt = ((value >> 5) & 1) != 0;
-				_pulse2ConstantVolume = ((value >> 4) & 1) != 0;
-				_pulse2EnvelopeDividerReload = value & 0b1111;
+
+				_pulse2Envelope.RegLoopFlag = _pulse2LengthCounterHalt;
+				_pulse2Envelope.RegConstantVolumeFlag = ((value >> 4) & 1) != 0;
+				_pulse2Envelope.RegVolumeOrDividerReload = value & 0b1111;
 				break;
 			case 0x4006:
 				_pulse2TimerReload &= 0xFF00;
@@ -115,7 +156,7 @@ internal sealed class Apu
 					_pulse2LengthCounter = _lengthCounterLookupTable[((value >> 3) & 0b11111)];
 
 				_pulse2Timer = _pulse2TimerReload;
-				_pulse2EnvelopeStartFlag = true;
+				_pulse2Envelope.StartFlag = true;
 				// Restart envelope
 				// Reset phase of pulse generator
 				break;
@@ -142,15 +183,11 @@ internal sealed class Apu
 
 				_frameCounterResetCounter = 4;
 
-
-
-
-
-
-
-
-
-				/*if (_frameCounterMode == 1) ????? 				{ 					DoQuarterFrame(); 					DoHalfFrame(); 				}*/
+				/*if (_frameCounterMode == 1) ?????
+ 				{
+ 					DoQuarterFrame();
+ 					DoHalfFrame();
+ 				}*/
 				break;
 		}
 	}
@@ -259,57 +296,8 @@ internal sealed class Apu
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	private void DoEnvelopes()
 	{
-		if (!_pulse1EnvelopeStartFlag) // When start flag is clear the divider is clocked
-		{
-			if (_pulse1EnvelopeDivider == 0) // When the divider is clocked while at 0, it is loaded with V and clocks the decay level counter.
-			{
-				_pulse1EnvelopeDivider = _pulse1EnvelopeDividerReload;
-				if (_pulse1EnvelopeDecayLevelCounter != 0) // If the counter is non-zero, it is decremented
-				{
-					_pulse1EnvelopeDecayLevelCounter--;
-				}
-				else if (_pulse1LengthCounterHalt) // otherwise if the loop flag is set, the decay level counter is loaded with 15
-					_pulse1EnvelopeDecayLevelCounter = 15;
-
-			}
-			else
-				_pulse1EnvelopeDivider--;
-		}
-		else // Otherwise the start flag is cleared, the delay level counter is loaded with 15 and the divider's period is immediately reloaded.
-		{
-			_pulse1EnvelopeStartFlag = false;
-			_pulse1EnvelopeDecayLevelCounter = 15;
-			_pulse1EnvelopeDivider = _pulse1EnvelopeDividerReload;
-		}
-
-		if (!_pulse2EnvelopeStartFlag) // When start flag is clear the divider is clocked
-		{
-
-			if (_pulse2EnvelopeDivider == 0) // When the divider is clocked while at 0, it is loaded with V and clocks the decay level counter.
-			{
-				_pulse2EnvelopeDivider = _pulse2EnvelopeDividerReload;
-				if (_pulse2EnvelopeDecayLevelCounter != 0) // If the counter is non-zero, it is decremented
-				{
-					_pulse2EnvelopeDecayLevelCounter--;
-				}
-				else if (_pulse2LengthCounterHalt) // otherwise if the loop flag is set, the decay level counter is loaded with 15
-					_pulse2EnvelopeDecayLevelCounter = 15;
-
-			}
-			else
-				_pulse2EnvelopeDivider--;
-		}
-		else // Otherwise the start flag is cleared, the delay level counter is loaded with 15 and the divider's period is immediately reloaded.
-		{
-			_pulse2EnvelopeStartFlag = false;
-			_pulse2EnvelopeDecayLevelCounter = 15;
-			_pulse2EnvelopeDivider = _pulse2EnvelopeDividerReload;
-		}
-
-		_pulse1Volume = !_pulse1ConstantVolume ? _pulse1EnvelopeDecayLevelCounter : _pulse1EnvelopeDividerReload;
-
-		_pulse2Volume = !_pulse2ConstantVolume ? _pulse2EnvelopeDecayLevelCounter : _pulse2EnvelopeDividerReload;
-		// TODO
+		_pulse1Envelope.Step();
+		_pulse2Envelope.Step();
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -410,7 +398,7 @@ internal sealed class Apu
 				_ => 0.0f
 			};
 
-			pulse1 = NiceSquare(time, freq, dutycycle) * _pulse1Volume;
+			pulse1 = NiceSquare(time, freq, dutycycle) * _pulse1Envelope.Volume;
 		}
 
 		if (_pulse2LengthCounter != 0)
@@ -425,16 +413,15 @@ internal sealed class Apu
 				_ => 0.0f
 			};
 
-			pulse2 = NiceSquare(time, freq, dutycycle) * _pulse2Volume;
+			//pulse2 = NiceSquare(time, freq, dutycycle) * _pulse2Volume;
+			pulse2 = NiceSquare(time, freq, dutycycle) * _pulse2Envelope.Volume;
 		}
-
+		
 		if (pulse1 != 0.0f || pulse2 != 0.0f)
 			pulseOut = 95.88f / ((8128.0f / (pulse1 + pulse2)) + 100.0f);
 
 		var tndOut = 0.0f;
 		var output = pulseOut + tndOut;
 		return output;
-
-		//return float.Sin(time * 440.0f * 2.0f * float.Pi);
 	}
 }

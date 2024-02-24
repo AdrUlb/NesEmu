@@ -26,8 +26,6 @@ internal sealed class Emu : IDisposable
 
 	private readonly Stopwatch _sw = new();
 
-	float time;
-
 	public Emu()
 	{
 		Cpu = new();
@@ -125,12 +123,12 @@ internal sealed class Emu : IDisposable
 			dropCount--;
 		}
 
-		/*var count = buffer.Length - 1000;
+		var count = buffer.Length - 1000;
 		while (count > 0)
 		{
 			_audioSamples.TryDequeue(out _);
 			count--;
-		}*/
+		}
 
 		return buffer.Length;
 	}
