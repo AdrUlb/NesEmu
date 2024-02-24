@@ -4,33 +4,55 @@ namespace NesEmu;
 
 internal sealed class Apu
 {
+	private struct SquareWaveGenerator
+	{
+		private const double _sampleRate = 44100;
+		public double Phase;
+
+		public double GenerateSample(double freq, double dutyCycle)
+		{
+			double period = _sampleRate / freq;
+			double onTime = period * dutyCycle;
+
+			double sample = (Phase < onTime) ? 1.0 : -1.0;
+
+			Phase += 1.0;
+			if (Phase >= period)
+			{
+				Phase -= period;
+			}
+
+			return sample;
+		}
+	}
+
 	// https://www.nesdev.org/wiki/APU_Envelope
 	private struct EnvelopeUnit
 	{
-		public bool RegLoopFlag;
-		public bool RegConstantVolumeFlag;
-		public int RegVolumeOrDividerReload;
+		public bool LoopFlag;
+		public bool ConstantVolumeFlag;
+		public int VolumeOrDividerReload;
 
 		public bool StartFlag;
-		private int _decayLevelCounter;
+		private int DecayLevelCounter;
 		private int _divider;
 
-		public int Volume { get; private set; }
+		public int Volume;
 
 		private void Divider()
 		{
 			// When the divider is clocked while at 0, it is loaded with V and clocks the decay level counter
 			if (_divider == 0)
 			{
-				_divider = RegVolumeOrDividerReload;
+				_divider = VolumeOrDividerReload;
 
 				// Then one of two actions occurs:
-				if (_decayLevelCounter != 0) // If the counter is non-zero, it is decremented
-					_decayLevelCounter--;
+				if (DecayLevelCounter != 0) // If the counter is non-zero, it is decremented
+					DecayLevelCounter--;
 
-				else if (RegLoopFlag) // otherwise if the loop flag is set, the decay level counter is loaded with 15.
+				else if (LoopFlag) // otherwise if the loop flag is set, the decay level counter is loaded with 15.
 				{
-					_decayLevelCounter = 15;
+					DecayLevelCounter = 15;
 				}
 			}
 			else
@@ -46,17 +68,125 @@ internal sealed class Apu
 			else // Otherwise the start flag is cleared, the decay level counter is loaded with 15, and the divider's period is immediately reloaded
 			{
 				StartFlag = false;
-				_decayLevelCounter = 15;
-				_divider = RegVolumeOrDividerReload;
+				DecayLevelCounter = 15;
+				_divider = VolumeOrDividerReload;
 			}
-			Volume = RegConstantVolumeFlag ? RegVolumeOrDividerReload : _decayLevelCounter;
+			Volume = ConstantVolumeFlag ? VolumeOrDividerReload : DecayLevelCounter;
 		}
 	}
 
-	private readonly byte[] _dutyCycles = [0b00000001, 0b00000011, 0b00001111, 0b11111100];
+	// https://www.nesdev.org/wiki/APU_Pulse
+	private struct PulseSequencerUnit
+	{
+		private static readonly int[][] _dutyCycles = [[0, 1, 0, 0, 0, 0, 0, 0], [0, 1, 1, 0, 0, 0, 0, 0], [0, 1, 1, 1, 1, 0, 0, 0], [1, 0, 0, 1, 1, 1, 1, 1]];
+
+		public int DutyCycle;
+		public int DutyIndex;
+
+		public int TimerReload;
+		public int Timer;
+
+		public int Output;
+
+		public void Step()
+		{
+			if (Timer == 0)
+			{
+				Timer = TimerReload;
+
+				DutyIndex++;
+				DutyIndex %= 8;
+			}
+			else
+				Timer--;
+
+			Output = (_dutyCycles[DutyCycle][DutyIndex]) & 1;
+		}
+	}
+
+	// https://www.nesdev.org/wiki/APU_Length_Counter
+	private struct LengthCounter
+	{
+		public bool Enable;
+		public bool Halt;
+		public int Value;
+
+		public void Step()
+		{
+			if (Value != 0 && !Halt)
+				Value--;
+		}
+	}
+
+	// https://www.nesdev.org/wiki/APU_Sweep
+	private struct SweepUnit(Func<int> getTimerReload, Action<int> setTimerReload, bool onesComplementNegate)
+	{
+		public bool Enable;
+		public int ShiftCount;
+		public bool ReloadFlag;
+		public bool NegateFlag;
+		public int DividerReload;
+
+		private readonly Func<int> _getTimerReload = getTimerReload;
+		private readonly Action<int> _setTimerReload = setTimerReload;
+		private int _divider;
+		private readonly bool _onesComplementNegate = onesComplementNegate;
+
+		private int _targetPeriod;
+
+		public bool MuteChannel;
+
+		public void UpdateTargetPeriod()
+		{
+			// A barrel shifter shifts the pulse channel's 11-bit raw timer period right by the shift count, producing the change amount.
+			var currentPeriod = _getTimerReload();
+
+			var changeAmount = currentPeriod >> ShiftCount;
+			if (NegateFlag) // If the negate flag is true
+			{
+				changeAmount = -changeAmount; // The change amount is made negative
+				if (_onesComplementNegate) // Pulse 1 adds the ones' complement (−c − 1). Making 20 negative produces a change amount of −21
+					changeAmount--;
+			}
+
+			// The target period is the sum of the current period and the change amount, clamped to zero if this sum is negative.
+			_targetPeriod = currentPeriod + changeAmount;
+			if (_targetPeriod < 0)
+				_targetPeriod = 0;
+
+			MuteChannel = currentPeriod < 8 || _targetPeriod > 0x7FF;
+		}
+
+		public void Step()
+		{
+			if (_divider == 0 && Enable && ShiftCount != 0) // If the divider's counter is zero, the sweep is enabled, the shift count is nonzero
+			{
+				if (!MuteChannel) // And the sweep unit is not muting the channel
+					_setTimerReload(_targetPeriod); // The pulse's period is set to the target period
+			}
+
+			if (_divider == 0 || ReloadFlag) // If the divider's counter is zero or the reload flag is true
+			{
+				// The divider counter is set to P and the reload flag is cleared.
+				_divider = DividerReload;
+				ReloadFlag = false;
+			}
+			else // Otherwise, the divider counter is decremented.
+				_divider--;
+		}
+	}
 
 	private EnvelopeUnit _pulse1Envelope = new();
+	private PulseSequencerUnit _pulse1Sequencer = new();
+	private LengthCounter _pulse1LengthCounter = new();
+	private SweepUnit _pulse1Sweep;
+	private SquareWaveGenerator _pulse1Generator = new();
+
 	private EnvelopeUnit _pulse2Envelope = new();
+	private PulseSequencerUnit _pulse2Sequencer = new();
+	private LengthCounter _pulse2LengthCounter = new();
+	private SweepUnit _pulse2Sweep;
+	private SquareWaveGenerator _pulse2Generator = new();
 
 	private int _frameCounter = 0;
 	private int _frameCounterMode = 1;
@@ -64,32 +194,19 @@ internal sealed class Apu
 	private bool _frameCounterInterrupt = false;
 	private int _frameCounterResetCounter = 0;
 
-	private int _pulse1DutyCycle = 0;
-	private bool _pulse1LengthCounterHalt = false;
-	private int _pulse1LengthCounter = 0;
-	private int _pulse1TimerReload = 0;
-	private int _pulse1Timer = 0;
-	private int _pulse1DutyIndex = 0;
-
-	private int _pulse2DutyCycle = 0;
-	private bool _pulse2LengthCounterHalt = false;
-	private int _pulse2LengthCounter = 0;
-	private int _pulse2TimerReload = 0;
-	private int _pulse2Timer = 0;
-	private int _pulse2DutyIndex = 0;
-
 	private bool _dmcControlEnable = false;
-	private bool _pulse1LengthCounterEnable = false;
-	private bool _pulse2LengthCounterEnable = false;
 	private bool _triangleLengthCounterEnable = false;
 	private bool _noiseLengthCounterEnable = false;
 
-	private int _pulse1SequencerOutput = 0;
-	private int _pulse2SequencerOutput = 0;
-
 	private ulong _cycles = 0;
 
-	private byte[] _lengthCounterLookupTable = [10, 254, 20, 2, 40, 4, 80, 6, 160, 8, 60, 10, 14, 12, 26, 14, 12, 16, 24, 18, 48, 20, 96, 22, 192, 24, 72, 26, 16, 28, 32, 30];
+	private static readonly byte[] _lengthCounterLookupTable = [10, 254, 20, 2, 40, 4, 80, 6, 160, 8, 60, 10, 14, 12, 26, 14, 12, 16, 24, 18, 48, 20, 96, 22, 192, 24, 72, 26, 16, 28, 32, 30];
+
+	public Apu()
+	{
+		_pulse1Sweep = new(() => _pulse1Sequencer.TimerReload, value => _pulse1Sequencer.TimerReload = value, true);
+		_pulse2Sweep = new(() => _pulse2Sequencer.TimerReload, value => _pulse2Sequencer.TimerReload = value, false);
+	}
 
 	public byte CpuReadByte(ushort address)
 	{
@@ -97,8 +214,8 @@ internal sealed class Apu
 		{
 			case 0x4015:
 				return (byte)(
-					(_pulse1LengthCounterEnable ? 1 : 0) |
-					((_pulse2LengthCounterEnable ? 1 : 0) << 2) |
+					(_pulse1LengthCounter.Enable ? 1 : 0) |
+					((_pulse2LengthCounter.Enable ? 1 : 0) << 2) |
 					((_triangleLengthCounterEnable ? 1 : 0) << 3) |
 					((_noiseLengthCounterEnable ? 1 : 0) << 4) |
 					((_dmcControlEnable ? 1 : 0) << 5)
@@ -112,67 +229,79 @@ internal sealed class Apu
 		switch (address)
 		{
 			case 0x4000:
-				_pulse1DutyCycle = (byte)((value >> 6) & 0b11);
-				_pulse1LengthCounterHalt = ((value >> 5) & 1) != 0;
+				_pulse1Sequencer.DutyCycle = (byte)((value >> 6) & 0b11);
+				_pulse1LengthCounter.Halt = ((value >> 5) & 1) != 0;
 
-				_pulse1Envelope.RegLoopFlag = _pulse1LengthCounterHalt;
-				_pulse1Envelope.RegConstantVolumeFlag = ((value >> 4) & 1) != 0;
-				_pulse1Envelope.RegVolumeOrDividerReload = value & 0b1111;
+				_pulse1Envelope.LoopFlag = _pulse1LengthCounter.Halt;
+				_pulse1Envelope.ConstantVolumeFlag = ((value >> 4) & 1) != 0;
+				_pulse1Envelope.VolumeOrDividerReload = value & 0b1111;
+				break;
+			case 0x4001:
+				_pulse1Sweep.Enable = ((value >> 7) & 1) != 0;
+				_pulse1Sweep.DividerReload = (value >> 4) & 0b111;
+				_pulse1Sweep.NegateFlag = ((value >> 3) & 1) != 0;
+				_pulse1Sweep.ShiftCount = value & 0b111;
+				_pulse1Sweep.ReloadFlag = true;
 				break;
 			case 0x4002:
-				_pulse1TimerReload &= 0xFF00;
-				_pulse1TimerReload |= value;
+				_pulse1Sequencer.TimerReload &= 0xFF00;
+				_pulse1Sequencer.TimerReload |= value;
 				break;
 			case 0x4003:
-				_pulse1TimerReload &= 0x00FF;
-				_pulse1TimerReload |= (value & 0b111) << 8;
+				_pulse1Sequencer.TimerReload &= 0x00FF;
+				_pulse1Sequencer.TimerReload |= (value & 0b111) << 8;
 
-				if (_pulse1LengthCounterEnable)
-					_pulse1LengthCounter = _lengthCounterLookupTable[((value >> 3) & 0b11111)];
+				if (_pulse1LengthCounter.Enable)
+					_pulse1LengthCounter.Value = _lengthCounterLookupTable[(value >> 3) & 0b11111];
 
-				_pulse1Timer = _pulse1TimerReload;
 				_pulse1Envelope.StartFlag = true;
-				//_pulse1EnvelopeStartFlag = true;
-				// Restart envelope
-				// Reset phase of pulse generator
+				_pulse1Sequencer.DutyIndex = 0;
+				_pulse1Sequencer.Timer = _pulse1Sequencer.TimerReload;
+				_pulse1Generator.Phase = 0;
 				break;
 			case 0x4004:
-				_pulse2DutyCycle = (byte)((value >> 6) & 0b11);
-				_pulse2LengthCounterHalt = ((value >> 5) & 1) != 0;
+				_pulse2Sequencer.DutyCycle = (byte)((value >> 6) & 0b11);
+				_pulse2LengthCounter.Halt = ((value >> 5) & 1) != 0;
 
-				_pulse2Envelope.RegLoopFlag = _pulse2LengthCounterHalt;
-				_pulse2Envelope.RegConstantVolumeFlag = ((value >> 4) & 1) != 0;
-				_pulse2Envelope.RegVolumeOrDividerReload = value & 0b1111;
+				_pulse2Envelope.LoopFlag = _pulse2LengthCounter.Halt;
+				_pulse2Envelope.ConstantVolumeFlag = ((value >> 4) & 1) != 0;
+				_pulse2Envelope.VolumeOrDividerReload = value & 0b1111;
+				break;
+			case 0x4005:
+				_pulse2Sweep.Enable = ((value >> 7) & 1) != 0;
+				_pulse2Sweep.DividerReload = (value >> 4) & 0b111;
+				_pulse2Sweep.NegateFlag = ((value >> 3) & 1) != 0;
+				_pulse2Sweep.ShiftCount = value & 0b111;
+				_pulse2Sweep.ReloadFlag = true;
 				break;
 			case 0x4006:
-				_pulse2TimerReload &= 0xFF00;
-				_pulse2TimerReload |= value;
+				_pulse2Sequencer.TimerReload &= 0xFF00;
+				_pulse2Sequencer.TimerReload |= value;
 				break;
 			case 0x4007:
-				_pulse2TimerReload &= 0x00FF;
-				_pulse2TimerReload |= (value & 0b111) << 8;
+				_pulse2Sequencer.TimerReload &= 0x00FF;
+				_pulse2Sequencer.TimerReload |= (value & 0b111) << 8;
 
-				if (_pulse2LengthCounterEnable)
-					_pulse2LengthCounter = _lengthCounterLookupTable[((value >> 3) & 0b11111)];
+				if (_pulse2LengthCounter.Enable)
+					_pulse2LengthCounter.Value = _lengthCounterLookupTable[(value >> 3) & 0b11111];
 
-				_pulse2Timer = _pulse2TimerReload;
 				_pulse2Envelope.StartFlag = true;
-				// Restart envelope
-				// Reset phase of pulse generator
+				_pulse2Sequencer.DutyIndex = 0;
+				_pulse2Sequencer.Timer = _pulse2Sequencer.TimerReload;
+				_pulse2Generator.Phase = 0;
 				break;
 			case 0x4015:
-				_pulse1LengthCounterEnable = (value & 1) != 0;
-				_pulse2LengthCounterEnable = ((value >> 1) & 1) != 0;
+				_pulse1LengthCounter.Enable = (value & 1) != 0;
+				_pulse2LengthCounter.Enable = ((value >> 1) & 1) != 0;
 				_triangleLengthCounterEnable = ((value >> 2) & 1) != 0;
 				_noiseLengthCounterEnable = ((value >> 3) & 1) != 0;
 				_dmcControlEnable = ((value >> 4) & 1) != 0;
 
-				if (!_pulse1LengthCounterEnable)
-					_pulse1LengthCounter = 0;
+				if (!_pulse1LengthCounter.Enable)
+					_pulse1LengthCounter.Value = 0;
 
-				if (!_pulse2LengthCounterEnable)
-					_pulse2LengthCounter = 0;
-				// TODO
+				if (!_pulse2LengthCounter.Enable)
+					_pulse2LengthCounter.Value = 0;
 				break;
 			case 0x4017:
 				_frameCounterMode = (value >> 7) & 1;
@@ -194,8 +323,13 @@ internal sealed class Apu
 
 	public void Tick()
 	{
+		_pulse1Sweep.UpdateTargetPeriod();
+		_pulse2Sweep.UpdateTargetPeriod();
+
 		DoFrameCounter();
-		DoSequencer();
+
+		if (_cycles % 2 == 1)
+			DoSequencer();
 
 		_cycles++;
 	}
@@ -309,119 +443,66 @@ internal sealed class Apu
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	private void DoLengthCounters()
 	{
-		if (_pulse1LengthCounter != 0 && !_pulse1LengthCounterHalt)
-			_pulse1LengthCounter--;
-
-		if (_pulse2LengthCounter != 0 && !_pulse2LengthCounterHalt)
-			_pulse2LengthCounter--;
-
-		// TODO
+		_pulse1LengthCounter.Step();
+		_pulse2LengthCounter.Step();
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	private void DoSweep()
 	{
-		// TODO
+		_pulse1Sweep.Step();
+		_pulse2Sweep.Step();
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	private void DoSequencer()
 	{
-		if (_cycles % 2 == 0)
-			return;
-
-		if (_pulse1Timer == 0)
-		{
-			_pulse1Timer = _pulse1TimerReload;
-
-			_pulse1SequencerOutput = (_dutyCycles[_pulse1DutyCycle] >> _pulse1DutyIndex) & 1;
-
-			if (_pulse1DutyIndex == 0)
-			{
-				_pulse1DutyIndex = 7;
-			}
-			else
-				_pulse1DutyIndex--;
-		}
-		else
-			_pulse1Timer--;
-
-		if (_pulse2Timer == 0)
-		{
-			_pulse2Timer = _pulse2TimerReload;
-
-			_pulse2SequencerOutput = (_dutyCycles[_pulse2DutyCycle] >> _pulse2DutyIndex) & 1;
-
-			if (_pulse2DutyIndex == 0)
-			{
-				_pulse2DutyIndex = 7;
-			}
-			else
-				_pulse2DutyIndex--;
-		}
-		else
-			_pulse2Timer--;
+		_pulse1Sequencer.Step();
+		_pulse2Sequencer.Step();
 	}
 
-	private float NiceSquare(float time, float freq, float dutycycle)
+	public float GetCurrentSample()
 	{
-		var a = 0.0f;
-		var b = 0.0f;
-		var p = dutycycle * 2.0f * float.Pi;
+		var pulseOut = 0.0;
 
-		for (float n = 1; n < 50.0f; n++)
+		var pulse1 = 0.0;
+		var pulse2 = 0.0;
+
+		if (_pulse1LengthCounter.Value != 0 && !_pulse1Sweep.MuteChannel)
 		{
-			var c = n * freq * 2.0f * float.Pi * time;
-			a += float.Sin(c) / n;
-			b += float.Sin(c - (p * n)) / n;
-		}
-
-		return (2.0f / float.Pi) * (a - b);
-	}
-
-	public float GetCurrentSample(float time)
-	{
-		var pulseOut = 0.0f;
-
-		var pulse1 = 0.0f;
-		var pulse2 = 0.0f;
-
-		if (_pulse1LengthCounter != 0)
-		{
-			var freq = Emu.CyclesPerSecond / 12.0f / (16.0f * (_pulse1TimerReload + 1));
-			var dutycycle = _pulse1DutyCycle switch
+			var freq = Emu.CyclesPerSecond / 12.0 / (16.0 * (_pulse1Sequencer.TimerReload + 1));
+			var dutycycle = _pulse1Sequencer.DutyCycle switch
 			{
-				0 => 0.125f,
-				1 => 0.25f,
-				2 => 0.5f,
-				3 => 0.25f,
-				_ => 0.0f
+				0 => 0.125,
+				1 => 0.25,
+				2 => 0.5,
+				3 => 0.25,
+				_ => 0.0
 			};
 
-			pulse1 = NiceSquare(time, freq, dutycycle) * _pulse1Envelope.Volume;
+			pulse1 = _pulse1Generator.GenerateSample(freq, dutycycle) * _pulse1Envelope.Volume;
 		}
 
-		if (_pulse2LengthCounter != 0)
+		if (_pulse2LengthCounter.Value != 0 && !_pulse2Sweep.MuteChannel)
 		{
-			var freq = Emu.CyclesPerSecond / 12.0f / (16.0f * (_pulse2TimerReload + 1));
-			var dutycycle = _pulse2DutyCycle switch
+			var freq = Emu.CyclesPerSecond / 12.0 / (16.0 * (_pulse2Sequencer.TimerReload + 1));
+			var dutycycle = _pulse2Sequencer.DutyCycle switch
 			{
-				0 => 0.125f,
-				1 => 0.25f,
-				2 => 0.5f,
-				3 => 0.25f,
-				_ => 0.0f
+				0 => 0.125,
+				1 => 0.25,
+				2 => 0.5,
+				3 => 0.75,
+				_ => 0.0
 			};
 
-			//pulse2 = NiceSquare(time, freq, dutycycle) * _pulse2Volume;
-			pulse2 = NiceSquare(time, freq, dutycycle) * _pulse2Envelope.Volume;
+			pulse2 = _pulse2Generator.GenerateSample(freq, dutycycle) * _pulse2Envelope.Volume;
 		}
 		
-		if (pulse1 != 0.0f || pulse2 != 0.0f)
-			pulseOut = 95.88f / ((8128.0f / (pulse1 + pulse2)) + 100.0f);
+		if (pulse1 != 0.0 || pulse2 != 0.0)
+			pulseOut = 95.88 / ((8128.0 / (pulse1 + pulse2)) + 100.0);
 
-		var tndOut = 0.0f;
+		var tndOut = 0.0;
 		var output = pulseOut + tndOut;
-		return output;
+		return (float)output;
 	}
 }

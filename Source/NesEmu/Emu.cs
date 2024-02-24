@@ -56,7 +56,7 @@ internal sealed class Emu : IDisposable
 
 	private void EmuThreadProc()
 	{
-		double lastTime = Stopwatch.GetTimestamp();
+		long lastTime = Stopwatch.GetTimestamp();
 
 		_audioPlayer.Play();
 
@@ -86,7 +86,7 @@ internal sealed class Emu : IDisposable
 
 				if (cycles % CyclesPerSample == 0)
 				{
-					_audioSamples.Enqueue(Apu.GetCurrentSample((float)cycles / CyclesPerSecond));
+					_audioSamples.Enqueue(Apu.GetCurrentSample());
 				}
 
 				if (!wasVblank && Ppu.StatusVblank)
@@ -96,7 +96,7 @@ internal sealed class Emu : IDisposable
 				}
 			}
 
-			double thisTime;
+			long thisTime;
 			do
 			{
 				thisTime = Stopwatch.GetTimestamp();
@@ -121,13 +121,6 @@ internal sealed class Emu : IDisposable
 		{
 			_audioSamples.TryDequeue(out var _);
 			dropCount--;
-		}
-
-		var count = buffer.Length - 1000;
-		while (count > 0)
-		{
-			_audioSamples.TryDequeue(out _);
-			count--;
 		}
 
 		return buffer.Length;
