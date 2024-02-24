@@ -96,6 +96,8 @@ internal sealed class Emu : IDisposable
 				}
 			}
 
+			Console.WriteLine($"Frame time: {Stopwatch.GetElapsedTime(lastTime).TotalMilliseconds}ms");
+
 			long thisTime;
 			do
 			{

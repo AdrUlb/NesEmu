@@ -11,17 +11,9 @@ internal sealed class Apu
 
 		public double GenerateSample(double freq, double dutyCycle)
 		{
-			double period = _sampleRate / freq;
-			double onTime = period * dutyCycle;
-
-			double sample = (Phase < onTime) ? 1.0 : -1.0;
-
-			Phase += 1.0;
-			if (Phase >= period)
-			{
-				Phase -= period;
-			}
-
+			Phase += 1.0 / _sampleRate * freq;
+			Phase %= 1.0;
+			var sample = Phase <= dutyCycle ? 1.0 : -1.0;
 			return sample;
 		}
 	}
@@ -79,6 +71,7 @@ internal sealed class Apu
 	private struct PulseSequencerUnit
 	{
 		private static readonly int[][] _dutyCycles = [[0, 1, 0, 0, 0, 0, 0, 0], [0, 1, 1, 0, 0, 0, 0, 0], [0, 1, 1, 1, 1, 0, 0, 0], [1, 0, 0, 1, 1, 1, 1, 1]];
+		//private static readonly int[][] _dutyCycles = [[1, 0, 0, 0, 0, 0, 0, 0], [1, 1, 0, 0, 0, 0, 0, 0], [1, 1, 1, 1, 0, 0, 0, 0], [1, 1, 1, 1, 1, 1, 0, 0]];
 
 		public int DutyCycle;
 		public int DutyIndex;
@@ -86,7 +79,7 @@ internal sealed class Apu
 		public int TimerReload;
 		public int Timer;
 
-		public int Output;
+		public bool Output;
 
 		public void Step()
 		{
@@ -100,7 +93,7 @@ internal sealed class Apu
 			else
 				Timer--;
 
-			Output = (_dutyCycles[DutyCycle][DutyIndex]) & 1;
+			Output = ((_dutyCycles[DutyCycle][DutyIndex]) & 1) != 0;
 		}
 	}
 
@@ -311,12 +304,6 @@ internal sealed class Apu
 					_frameCounterInterrupt = false;
 
 				_frameCounterResetCounter = 4;
-
-				/*if (_frameCounterMode == 1) ?????
- 				{
- 					DoQuarterFrame();
- 					DoHalfFrame();
- 				}*/
 				break;
 		}
 	}

@@ -14,6 +14,11 @@
 	</PropertyGroup>
 
 	<ItemGroup>
+		<DirectPInvoke Include="AudioThing.Wasapi"/>
+		<NativeLibrary Include="..\..\External\AudioThing\NativeLibs\win-x64\AudioThing.Wasapi.Static.lib"/>
+	</ItemGroup>
+
+	<ItemGroup>
 		<ProjectReference Include="..\..\External\AudioThing\Source\AudioThing\AudioThing.csproj" />
 		<ProjectReference Include="..\..\External\RenderThing\Source\RenderThing\RenderThing.csproj" />
 	</ItemGroup>
