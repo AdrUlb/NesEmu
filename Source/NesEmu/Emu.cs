@@ -1,4 +1,5 @@
 ﻿using AudioThing;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 
 namespace NesEmu;
@@ -9,10 +10,10 @@ internal sealed class Emu : IDisposable
 
 	private volatile bool _running = false;
 
-	private const int _cyclesPerSecond = 21477272;
-	private const double _framesPerSecond = _cyclesPerSecond / 4.0 / 262.0 / 341.0;
-	private readonly double _ticksPerFrame = Stopwatch.Frequency / _framesPerSecond;
-	private const long _cyclesPerSample = _cyclesPerSecond / (44100);
+	public const int CyclesPerSecond = 21477272;
+	public const long CyclesPerSample = CyclesPerSecond / 44100;
+	public const double FramesPerSecond = CyclesPerSecond / 4.0 / 262.0 / 341.0;
+	public static readonly double TicksPerFrame = Stopwatch.Frequency / FramesPerSecond;
 
 	public event EventHandler? Vblank;
 	public readonly Cpu Cpu;
@@ -20,11 +21,12 @@ internal sealed class Emu : IDisposable
 	public readonly Apu Apu;
 	public readonly Controller Controller;
 
-	private readonly Queue<short> _audioSamples = new();
-	private readonly object _audioSamplesLock = new();
-	private readonly PcmPlayer _audioPlayer;
+	ConcurrentQueue<float> _audioSamples = new();
+	private readonly AudioPlayer<float> _audioPlayer;
 
 	private readonly Stopwatch _sw = new();
+
+	float time;
 
 	public Emu()
 	{
@@ -37,7 +39,7 @@ internal sealed class Emu : IDisposable
 		Cpu.Bus.Apu = Apu;
 		Cpu.Bus.Controller = Controller;
 
-		_audioPlayer = new(44100, 16, 1, AudioDataCallback, 4096);
+		_audioPlayer = new(44100, 32, 1, AudioFormat.Float, AudioDataCallback);
 
 		using (var fs = File.OpenRead(@"C:\Stuff\Roms\NES\mario.nes"))
 		{
@@ -59,10 +61,10 @@ internal sealed class Emu : IDisposable
 		double lastTime = Stopwatch.GetTimestamp();
 
 		_audioPlayer.Play();
+
+		uint cycles = 0;
 		while (_running)
 		{
-			uint cycles = 0;
-
 			while (true)
 			{
 				cycles++;
@@ -84,10 +86,9 @@ internal sealed class Emu : IDisposable
 				if (cycles % 4 == 0)
 					Ppu.Tick();
 
-				if (cycles % _cyclesPerSample == 0)
+				if (cycles % CyclesPerSample == 0)
 				{
-					lock (_audioSamplesLock)
-						_audioSamples.Enqueue((short)(Apu.GetCurrentSample() * short.MaxValue));
+					_audioSamples.Enqueue(Apu.GetCurrentSample((float)cycles / CyclesPerSecond));
 				}
 
 				if (!wasVblank && Ppu.StatusVblank)
@@ -102,37 +103,36 @@ internal sealed class Emu : IDisposable
 			{
 				thisTime = Stopwatch.GetTimestamp();
 			}
-			while (thisTime - lastTime < _ticksPerFrame);
-
+			while (thisTime - lastTime < TicksPerFrame);
 			lastTime = thisTime;
 		}
 
-
 		_audioPlayer.Stop();
-		_audioSamples.Clear();
 	}
 
-	private int AudioDataCallback(Span<byte> buffer)
+	private int AudioDataCallback(Span<float> buffer)
 	{
-		int i;
-		lock (_audioSamplesLock)
-		{
-			while (_audioSamples.Count > 4096 * 4)
-				_audioSamples.Dequeue();
+		if (buffer.Length == 0)
+			return 0;
 
-			int sample = 0;
-			for (i = 0; i * 2 < buffer.Length; i++)
-			{
-				if (i < _audioSamples.Count)
-					sample = _audioSamples.Dequeue();
-				var lo = (byte)(sample >> 8);
-				var hi = (byte)sample;
-				buffer[i * 2] = hi;
-				buffer[i * 2 + 1] = lo;
-			}
+		for (var i = 0; i < buffer.Length; i++)
+			buffer[i] = _audioSamples.TryDequeue(out var sample) ? sample : 1.0f;
+
+		var dropCount = _audioSamples.Count - 1000;
+		while (dropCount > 0)
+		{
+			_audioSamples.TryDequeue(out var _);
+			dropCount--;
 		}
 
-		return i * 2;
+		/*var count = buffer.Length - 1000;
+		while (count > 0)
+		{
+			_audioSamples.TryDequeue(out _);
+			count--;
+		}*/
+
+		return buffer.Length;
 	}
 
 	public void Start()
