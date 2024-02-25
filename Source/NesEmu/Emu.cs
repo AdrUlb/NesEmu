@@ -11,7 +11,6 @@ internal sealed class Emu : IDisposable
 	private volatile bool _running = false;
 
 	public const int CyclesPerSecond = 21477272;
-	public const long CyclesPerSample = CyclesPerSecond / 44100;
 	public const double FramesPerSecond = CyclesPerSecond / 4.0 / 262.0 / 341.0;
 	public static readonly double TicksPerFrame = Stopwatch.Frequency / FramesPerSecond;
 
@@ -21,8 +20,7 @@ internal sealed class Emu : IDisposable
 	public readonly Apu Apu;
 	public readonly Controller Controller;
 
-	ConcurrentQueue<float> _audioSamples = new();
-	private readonly AudioPlayer<float> _audioPlayer;
+	private readonly WasapiAudioClient _audioClient;
 
 	private readonly Stopwatch _sw = new();
 
@@ -37,7 +35,7 @@ internal sealed class Emu : IDisposable
 		Cpu.Bus.Apu = Apu;
 		Cpu.Bus.Controller = Controller;
 
-		_audioPlayer = new(44100, 32, 1, AudioFormat.Float, AudioDataCallback);
+		_audioClient = new(AudioFormat.IeeeFloat, 44100, 32, 1);
 
 		using (var fs = File.OpenRead(@"C:\Stuff\Roms\NES\mario.nes"))
 		{
@@ -58,9 +56,10 @@ internal sealed class Emu : IDisposable
 	{
 		long lastTime = Stopwatch.GetTimestamp();
 
-		_audioPlayer.Play();
-
 		uint cycles = 0;
+
+		var audioTimer = Stopwatch.StartNew();
+
 		while (_running)
 		{
 			while (true)
@@ -84,11 +83,6 @@ internal sealed class Emu : IDisposable
 				if (cycles % 4 == 0)
 					Ppu.Tick();
 
-				if (cycles % CyclesPerSample == 0)
-				{
-					_audioSamples.Enqueue(Apu.GetCurrentSample());
-				}
-
 				if (!wasVblank && Ppu.StatusVblank)
 				{
 					Vblank?.Invoke(this, EventArgs.Empty);
@@ -96,7 +90,7 @@ internal sealed class Emu : IDisposable
 				}
 			}
 
-			Console.WriteLine($"Frame time: {Stopwatch.GetElapsedTime(lastTime).TotalMilliseconds}ms");
+			//Console.WriteLine($"Frame time: {Stopwatch.GetElapsedTime(lastTime).TotalMilliseconds}ms");
 
 			long thisTime;
 			do
@@ -106,26 +100,6 @@ internal sealed class Emu : IDisposable
 			while (thisTime - lastTime < TicksPerFrame);
 			lastTime = thisTime;
 		}
-
-		_audioPlayer.Stop();
-	}
-
-	private int AudioDataCallback(Span<float> buffer)
-	{
-		if (buffer.Length == 0)
-			return 0;
-
-		for (var i = 0; i < buffer.Length; i++)
-			buffer[i] = _audioSamples.TryDequeue(out var sample) ? sample : 1.0f;
-
-		var dropCount = _audioSamples.Count - 1000;
-		while (dropCount > 0)
-		{
-			_audioSamples.TryDequeue(out var _);
-			dropCount--;
-		}
-
-		return buffer.Length;
 	}
 
 	public void Start()
@@ -134,6 +108,26 @@ internal sealed class Emu : IDisposable
 			return;
 
 		_running = true;
+
+		new Thread(() =>
+		{
+			var maxAudioPadding = _audioClient.FramesPerSecond / 100;
+			_audioClient.Start();
+
+			while (_running)
+			{
+				if (_audioClient.PaddingFrames <= maxAudioPadding)
+				{
+					var sample = Apu.GetOutput();
+
+					var buffer = _audioClient.GetBuffer<float>(1);
+					buffer[0] = sample;
+					_audioClient.ReleaseBuffer(1);
+				}
+			}
+			_audioClient.Stop();
+		}).Start();
+
 		_emuThread.Start();
 	}
 
@@ -151,6 +145,6 @@ internal sealed class Emu : IDisposable
 
 	private void Dispose(bool disposing)
 	{
-		_audioPlayer.Dispose();
+		_audioClient.Dispose();
 	}
 }
