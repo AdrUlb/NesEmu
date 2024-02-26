@@ -76,7 +76,6 @@ internal sealed class Apu
 	private struct PulseSequencerUnit
 	{
 		private static readonly int[][] _dutyCycles = [[0, 1, 0, 0, 0, 0, 0, 0], [0, 1, 1, 0, 0, 0, 0, 0], [0, 1, 1, 1, 1, 0, 0, 0], [1, 0, 0, 1, 1, 1, 1, 1]];
-		//private static readonly int[][] _dutyCycles = [[1, 0, 0, 0, 0, 0, 0, 0], [1, 1, 0, 0, 0, 0, 0, 0], [1, 1, 1, 1, 0, 0, 0, 0], [1, 1, 1, 1, 1, 1, 0, 0]];
 
 		public int DutyCycle;
 		public int DutyIndex;
@@ -100,6 +99,7 @@ internal sealed class Apu
 			Output = _dutyCycles[DutyCycle][DutyIndex] != 0;
 		}
 	}
+
 
 	// https://www.nesdev.org/wiki/APU_Length_Counter
 	private struct LengthCounter
@@ -171,6 +171,55 @@ internal sealed class Apu
 		}
 	}
 
+	// https://www.nesdev.org/wiki/APU_Triangle
+	private struct TriangleChannel
+	{
+		public LengthCounter LengthCounter;
+
+		private static readonly int[] _steps = [15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+
+		private int _linearCounter;
+
+		public bool LinearCounterControl { readonly get => LengthCounter.Halt; set => LengthCounter.Halt = value; }
+		public bool LinearCounterReloadFlag;
+		public int LinearCounterReload;
+		public int StepIndex;
+
+		public int TimerReload;
+		public int Timer;
+
+		public int Output;
+
+		public void StepLinearCounter()
+		{
+			if (LinearCounterReloadFlag)
+			{
+				_linearCounter = LinearCounterReload;
+			}
+			else if (_linearCounter != 0)
+				_linearCounter--;
+
+			if (!LinearCounterControl)
+				LinearCounterReloadFlag = false;
+		}
+
+		public void StepSequencer()
+		{
+			if (Timer == 0)
+			{
+				Timer = TimerReload;
+				if (LengthCounter.Value != 0 && _linearCounter != 0)
+				{
+					StepIndex++;
+					StepIndex %= _steps.Length;
+
+					Output = _steps[StepIndex];
+				}
+			}
+			else
+				Timer--;
+		}
+	}
 	private EnvelopeUnit _pulse1Envelope = new();
 	private PulseSequencerUnit _pulse1Sequencer = new();
 	private LengthCounter _pulse1LengthCounter = new();
@@ -183,6 +232,8 @@ internal sealed class Apu
 	private SweepUnit _pulse2Sweep;
 	private SquareWaveGenerator _pulse2Generator = new();
 
+	private TriangleChannel _triangle;
+
 	private int _frameCounter = 0;
 	private int _frameCounterMode = 1;
 	private bool _frameCounterInterruptInhibit = false;
@@ -190,7 +241,6 @@ internal sealed class Apu
 	private int _frameCounterResetCounter = 0;
 
 	private bool _dmcControlEnable = false;
-	private bool _triangleLengthCounterEnable = false;
 	private bool _noiseLengthCounterEnable = false;
 
 	private ulong _cycles = 0;
@@ -211,7 +261,7 @@ internal sealed class Apu
 				return (byte)(
 					(_pulse1LengthCounter.Enable ? 1 : 0) |
 					((_pulse2LengthCounter.Enable ? 1 : 0) << 2) |
-					((_triangleLengthCounterEnable ? 1 : 0) << 3) |
+					((_triangle.LengthCounter.Enable ? 1 : 0) << 3) |
 					((_noiseLengthCounterEnable ? 1 : 0) << 4) |
 					((_dmcControlEnable ? 1 : 0) << 5)
 				);
@@ -281,10 +331,27 @@ internal sealed class Apu
 				_pulse2Envelope.StartFlag = true;
 				_pulse2Sequencer.Timer = _pulse2Sequencer.TimerReload;
 				break;
+			case 0x4008:
+				_triangle.LinearCounterControl = ((value >> 7) & 1) != 0;
+				_triangle.LinearCounterReload = value & 0b1111111;
+				break;
+			case 0x400A:
+				_triangle.TimerReload &= 0xFF00;
+				_triangle.TimerReload |= value;
+				break;
+			case 0x400B:
+				_triangle.TimerReload &= 0x00FF;
+				_triangle.TimerReload |= (value & 0b111) << 8;
+
+				if (_triangle.LengthCounter.Enable)
+					_triangle.LengthCounter.Value = _lengthCounterLookupTable[(value >> 3) & 0b11111];
+
+				_triangle.LinearCounterReloadFlag = true;
+				break;
 			case 0x4015:
 				_pulse1LengthCounter.Enable = (value & 1) != 0;
 				_pulse2LengthCounter.Enable = ((value >> 1) & 1) != 0;
-				_triangleLengthCounterEnable = ((value >> 2) & 1) != 0;
+				_triangle.LengthCounter.Enable = ((value >> 2) & 1) != 0;
 				_noiseLengthCounterEnable = ((value >> 3) & 1) != 0;
 				_dmcControlEnable = ((value >> 4) & 1) != 0;
 
@@ -315,6 +382,8 @@ internal sealed class Apu
 			_pulse1Sequencer.Step();
 			_pulse2Sequencer.Step();
 		}
+
+		_triangle.StepSequencer();
 
 		_cycles++;
 	}
@@ -422,7 +491,7 @@ internal sealed class Apu
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	private void DoTriangleLinearCounter()
 	{
-		// TODO
+		_triangle.StepLinearCounter();
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -430,6 +499,7 @@ internal sealed class Apu
 	{
 		_pulse1LengthCounter.Step();
 		_pulse2LengthCounter.Step();
+		_triangle.LengthCounter.Step();
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -441,8 +511,6 @@ internal sealed class Apu
 
 	public float GetOutput()
 	{
-		var pulseOut = 0.0;
-
 		var pulse1freq = (Emu.CyclesPerSecond / 12.0) / (16.0 * (_pulse1Sequencer.TimerReload + 1));
 		var pulse1dutyCycle = _pulse1Sequencer.DutyCycle switch
 		{
@@ -453,7 +521,6 @@ internal sealed class Apu
 			_ => 0.0
 		};
 		var pulse1 = _pulse1Generator.GenerateSample(pulse1freq, pulse1dutyCycle) * _pulse1Envelope.Volume;
-		//var pulse1 = (_pulse1Sequencer.Output ? 1.0 : 0) * _pulse1Envelope.Volume;
 
 		var pulse2freq = Emu.CyclesPerSecond / 12.0 / (16.0 * (_pulse2Sequencer.TimerReload + 1));
 		var pulse2dutyCycle = _pulse2Sequencer.DutyCycle switch
@@ -465,8 +532,11 @@ internal sealed class Apu
 			_ => 0.0
 		};
 		var pulse2 = _pulse2Generator.GenerateSample(pulse2freq, pulse2dutyCycle) * _pulse2Envelope.Volume;
-		//var pulse2 = (_pulse2Sequencer.Output ? 1.0 : 0) * _pulse2Envelope.Volume;
 
+		var triangle = _triangle.Output;
+
+		var noise = 0.0;
+		var dmc = 0.0;
 
 		if (_pulse1LengthCounter.Value == 0 || _pulse1Sweep.MuteChannel)
 			pulse1 = 0;
@@ -474,10 +544,15 @@ internal sealed class Apu
 		if (_pulse2LengthCounter.Value == 0 || _pulse2Sweep.MuteChannel)
 			pulse2 = 0;
 
-		if (pulse1 != 0.0 || pulse2 != 0.0)
-			//	pulseOut = 0.00752 * (pulse1 + pulse2);
-			pulseOut = 95.88 / ((8128.0 / (pulse1 + pulse2)) + 100.0);
+		var pulseOut = 0.0;
 		var tndOut = 0.0;
+
+		if (pulse1 != 0.0 || pulse2 != 0.0)
+			pulseOut = 95.88 / ((8128.0 / (pulse1 + pulse2)) + 100.0);
+
+		if (triangle != 0.0 || noise != 0.0 || dmc != 0.0)
+			tndOut = 159.79 / ((1 / ((triangle / 8227.0) + (noise / 12241.0) + (dmc / 22638.0))) + 100.0);
+
 		return (float)(pulseOut + tndOut);
 	}
 }

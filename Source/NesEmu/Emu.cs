@@ -1,6 +1,5 @@
 ﻿using AudioThing;
 using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
 
 namespace NesEmu;
 
@@ -52,20 +51,6 @@ internal sealed class Emu : IDisposable
 	}
 
 	~Emu() => Dispose(false);
-
-	bool condition = false;
-
-	bool TryWhatever([MaybeNullWhen(false)] out Cpu value)
-	{
-		if (!condition)
-		{
-			value = null;
-			return false;
-		}
-
-		value = new();
-		return true;
-	}
 
 	private void EmuThreadProc()
 	{
