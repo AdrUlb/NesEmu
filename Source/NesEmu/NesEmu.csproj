@@ -14,8 +14,8 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<DirectPInvoke Include="AudioThing.Wasapi"/>
-		<NativeLibrary Include="..\..\External\AudioThing\NativeLibs\win-x64\AudioThing.Wasapi.Static.lib"/>
+		<DirectPInvoke Include="AudioThing.Wasapi" />
+		<NativeLibrary Include="..\..\External\AudioThing\NativeLibs\win-x64\AudioThing.Wasapi.Static.lib" />
 	</ItemGroup>
 
 	<ItemGroup>

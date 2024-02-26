@@ -6,14 +6,18 @@ internal sealed class Apu
 {
 	private struct SquareWaveGenerator
 	{
+		private double _state;
+
 		private const double _sampleRate = 44100;
-		public double Phase;
 
 		public double GenerateSample(double freq, double dutyCycle)
 		{
-			Phase += freq;
-			Phase %= _sampleRate;
-			var sample = Phase / _sampleRate <= dutyCycle ? 1.0 : -1.0;
+			var phaseInc = freq / _sampleRate;
+			_state += phaseInc;
+			_state %= 1.0;
+
+			var sample = _state <= dutyCycle ? 1.0 : 0.0;
+
 			return sample;
 		}
 	}
@@ -86,14 +90,14 @@ internal sealed class Apu
 		{
 			if (Timer == 0)
 			{
-				Output = ((_dutyCycles[DutyCycle][DutyIndex]) & 1) != 0;
-
+				Timer = TimerReload;
 				DutyIndex++;
 				DutyIndex %= 8;
-				Timer = TimerReload;
 			}
 			else
 				Timer--;
+
+			Output = _dutyCycles[DutyCycle][DutyIndex] != 0;
 		}
 	}
 
@@ -125,11 +129,9 @@ internal sealed class Apu
 		private int _divider;
 		private readonly bool _onesComplementNegate = onesComplementNegate;
 
-		private int _targetPeriod;
-
 		public bool MuteChannel;
 
-		public void UpdateTargetPeriod()
+		public void Step()
 		{
 			// A barrel shifter shifts the pulse channel's 11-bit raw timer period right by the shift count, producing the change amount.
 			var currentPeriod = _getTimerReload();
@@ -143,29 +145,29 @@ internal sealed class Apu
 			}
 
 			// The target period is the sum of the current period and the change amount, clamped to zero if this sum is negative.
-			_targetPeriod = currentPeriod + changeAmount;
-			if (_targetPeriod < 0)
-				_targetPeriod = 0;
+			var targetPeriod = currentPeriod + changeAmount;
+			if (targetPeriod < 0)
+				targetPeriod = 0;
 
-			MuteChannel = currentPeriod < 8 || _targetPeriod > 0x7FF;
-		}
+			MuteChannel = currentPeriod < 8 || targetPeriod > 0x7FF;
 
-		public void Step()
-		{
-			if (_divider == 0 && Enable && ShiftCount != 0) // If the divider's counter is zero, the sweep is enabled, the shift count is nonzero
+			if (Enable)
 			{
-				if (!MuteChannel) // And the sweep unit is not muting the channel
-					_setTimerReload(_targetPeriod); // The pulse's period is set to the target period
-			}
+				if (_divider == 0 && ShiftCount != 0) // If the divider's counter is zero, the sweep is enabled, the shift count is nonzero
+				{
+					if (!MuteChannel) // And the sweep unit is not muting the channel
+						_setTimerReload(targetPeriod); // The pulse's period is set to the target period
+				}
 
-			if (_divider == 0 || ReloadFlag) // If the divider's counter is zero or the reload flag is true
-			{
-				// The divider counter is set to P and the reload flag is cleared.
-				_divider = DividerReload;
-				ReloadFlag = false;
+				if (_divider == 0 || ReloadFlag) // If the divider's counter is zero or the reload flag is true
+				{
+					// The divider counter is set to P and the reload flag is cleared.
+					_divider = DividerReload;
+					ReloadFlag = false;
+				}
+				else // Otherwise, the divider counter is decremented.
+					_divider--;
 			}
-			else // Otherwise, the divider counter is decremented.
-				_divider--;
 		}
 	}
 
@@ -248,9 +250,7 @@ internal sealed class Apu
 					_pulse1LengthCounter.Value = _lengthCounterLookupTable[(value >> 3) & 0b11111];
 
 				_pulse1Envelope.StartFlag = true;
-				//_pulse1Sequencer.DutyIndex = 0;
 				_pulse1Sequencer.Timer = _pulse1Sequencer.TimerReload;
-				_pulse1Generator.Phase = 0;
 				break;
 			case 0x4004:
 				_pulse2Sequencer.DutyCycle = (byte)((value >> 6) & 0b11);
@@ -279,9 +279,7 @@ internal sealed class Apu
 					_pulse2LengthCounter.Value = _lengthCounterLookupTable[(value >> 3) & 0b11111];
 
 				_pulse2Envelope.StartFlag = true;
-				//_pulse2Sequencer.DutyIndex = 0;
 				_pulse2Sequencer.Timer = _pulse2Sequencer.TimerReload;
-				_pulse2Generator.Phase = 0;
 				break;
 			case 0x4015:
 				_pulse1LengthCounter.Enable = (value & 1) != 0;
@@ -310,9 +308,6 @@ internal sealed class Apu
 
 	public void Tick()
 	{
-		_pulse1Sweep.UpdateTargetPeriod();
-		_pulse2Sweep.UpdateTargetPeriod();
-
 		DoFrameCounter();
 
 		if (_cycles % 2 == 1)
@@ -457,9 +452,8 @@ internal sealed class Apu
 			3 => 0.25,
 			_ => 0.0
 		};
-
 		var pulse1 = _pulse1Generator.GenerateSample(pulse1freq, pulse1dutyCycle) * _pulse1Envelope.Volume;
-		//var pulse1 = (_pulse1Sequencer.Output ? 1.0 : -1.0) /** _pulse1Envelope.Volume*/;
+		//var pulse1 = (_pulse1Sequencer.Output ? 1.0 : 0) * _pulse1Envelope.Volume;
 
 		var pulse2freq = Emu.CyclesPerSecond / 12.0 / (16.0 * (_pulse2Sequencer.TimerReload + 1));
 		var pulse2dutyCycle = _pulse2Sequencer.DutyCycle switch
@@ -470,9 +464,9 @@ internal sealed class Apu
 			3 => 0.25,
 			_ => 0.0
 		};
-
 		var pulse2 = _pulse2Generator.GenerateSample(pulse2freq, pulse2dutyCycle) * _pulse2Envelope.Volume;
-		//var pulse2 = (_pulse2Sequencer.Output ? 1.0 : -1.0)/* * _pulse2Envelope.Volume*/;
+		//var pulse2 = (_pulse2Sequencer.Output ? 1.0 : 0) * _pulse2Envelope.Volume;
+
 
 		if (_pulse1LengthCounter.Value == 0 || _pulse1Sweep.MuteChannel)
 			pulse1 = 0;
@@ -481,8 +475,8 @@ internal sealed class Apu
 			pulse2 = 0;
 
 		if (pulse1 != 0.0 || pulse2 != 0.0)
+			//	pulseOut = 0.00752 * (pulse1 + pulse2);
 			pulseOut = 95.88 / ((8128.0 / (pulse1 + pulse2)) + 100.0);
-
 		var tndOut = 0.0;
 		return (float)(pulseOut + tndOut);
 	}
