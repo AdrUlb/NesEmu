@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using System.Net.Http.Headers;
 
 namespace NesEmu.Mappers;
 
@@ -23,6 +24,7 @@ internal sealed class Mapper1 : Mapper
 
 	private readonly byte[] _prgRom;
 	private readonly byte[] _chrRom;
+	private readonly byte[] _prgRam;
 
 	private int _prgBank0 = 0;
 	private int _prgBank1 = 1;
@@ -42,12 +44,13 @@ internal sealed class Mapper1 : Mapper
 	{
 		if (chrRomBanks == 0)
 		{
-			chrRomBanks = 2;
+			chrRomBanks = 10;
 			_chrRam = true;
 		}
 
 		_prgRomBanks = prgRomBanks; // Number of 16k banks
 		_chrRomBanks = chrRomBanks; // Number of 8k banks
+		_prgRam = new byte[0x2000];
 
 		var prgRomSize = prgRomBanks * 0x4000; // 16384
 		var chrRomSize = chrRomBanks * 0x2000; // 8192
@@ -69,6 +72,7 @@ internal sealed class Mapper1 : Mapper
 
 	public override byte CpuReadByte(ushort address) => address switch
 	{
+		>= 0x6000 and <= 0x7FFF => _prgRam[address - 0x6000],
 		>= 0x8000 and <= 0xBFFF => _prgRom[address - 0x8000 + (_prgBank0 * 0x4000)],
 		>= 0xC000 and <= 0xFFFF => _prgRom[address - 0xC000 + (_prgBank1 * 0x4000)],
 		_ => 0xFF
@@ -94,6 +98,9 @@ internal sealed class Mapper1 : Mapper
 
 		switch (address)
 		{
+			case >= 0x6000 and <= 0x7FFF: // PRGRAM
+				_prgRam[address - 0x6000] = value;
+				break;
 			case >= 0x8000 and <= 0x9FFF: // Control register
 				{
 					var mirroringMode = (_shiftRegisterValue & 0b11) switch

@@ -1,9 +1,23 @@
-﻿using System.Runtime.CompilerServices;
+﻿using System.Diagnostics;
+using System.Runtime.CompilerServices;
 
 namespace NesEmu;
 
 internal sealed class Apu
 {
+	private class LowPassFilter(double alpha)
+	{
+		private double _alpha = alpha;
+		private double _lastOutput = 0.0;
+
+		public double Filter(double input)
+		{
+			var output = (_alpha * input) + ((1 - _alpha) * _lastOutput);
+			_lastOutput = output;
+			return output;
+		}
+	}
+
 	private struct SquareWaveGenerator
 	{
 		private double _state;
@@ -12,11 +26,10 @@ internal sealed class Apu
 
 		public double GenerateSample(double freq, double dutyCycle)
 		{
-			var phaseInc = freq / _sampleRate;
-			_state += phaseInc;
-			_state %= 1.0;
+			_state += freq;
+			_state %= _sampleRate;
 
-			var sample = _state <= dutyCycle ? 1.0 : 0.0;
+			var sample = _state / _sampleRate <= dutyCycle ? 1.0 : 0.0;
 
 			return sample;
 		}
@@ -178,7 +191,7 @@ internal sealed class Apu
 
 		private static readonly int[] _steps = [15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 
-		private int _linearCounter;
+		public int LinearCounter;
 
 		public bool LinearCounterControl { readonly get => LengthCounter.Halt; set => LengthCounter.Halt = value; }
 		public bool LinearCounterReloadFlag;
@@ -194,10 +207,10 @@ internal sealed class Apu
 		{
 			if (LinearCounterReloadFlag)
 			{
-				_linearCounter = LinearCounterReload;
+				LinearCounter = LinearCounterReload;
 			}
-			else if (_linearCounter != 0)
-				_linearCounter--;
+			else if (LinearCounter != 0)
+				LinearCounter--;
 
 			if (!LinearCounterControl)
 				LinearCounterReloadFlag = false;
@@ -208,7 +221,7 @@ internal sealed class Apu
 			if (Timer == 0)
 			{
 				Timer = TimerReload;
-				if (LengthCounter.Value != 0 && _linearCounter != 0)
+				if (LengthCounter.Value != 0 && LinearCounter != 0)
 				{
 					StepIndex++;
 					StepIndex %= _steps.Length;
@@ -220,6 +233,38 @@ internal sealed class Apu
 				Timer--;
 		}
 	}
+
+	private struct NoiseChannel()
+	{
+		public LengthCounter LengthCounter;
+		public EnvelopeUnit Envelope;
+
+		public bool ModeFlag;
+		public int TimerReload;
+		public int Timer;
+
+		private int _shiftRegister = 1;
+
+		public bool Output;
+
+		public void Step()
+		{
+			if (Timer == 0)
+			{
+				Timer = TimerReload;
+
+				// Clock LFSR
+				var feedback = (_shiftRegister & 1) ^ ((_shiftRegister >> (ModeFlag ? 6 : 1)) & 1);
+				_shiftRegister >>= 1;
+				_shiftRegister |= feedback << 14;
+			}
+			else
+				Timer--;
+
+			Output = (_shiftRegister & 1) != 0;
+		}
+	}
+
 	private EnvelopeUnit _pulse1Envelope = new();
 	private PulseSequencerUnit _pulse1Sequencer = new();
 	private LengthCounter _pulse1LengthCounter = new();
@@ -232,7 +277,11 @@ internal sealed class Apu
 	private SweepUnit _pulse2Sweep;
 	private SquareWaveGenerator _pulse2Generator = new();
 
-	private TriangleChannel _triangle;
+	private TriangleChannel _triangle = new();
+
+	private NoiseChannel _noise = new();
+
+	private LowPassFilter _lowPassFilter = new(0.4);
 
 	private int _frameCounter = 0;
 	private int _frameCounterMode = 1;
@@ -241,7 +290,6 @@ internal sealed class Apu
 	private int _frameCounterResetCounter = 0;
 
 	private bool _dmcControlEnable = false;
-	private bool _noiseLengthCounterEnable = false;
 
 	private ulong _cycles = 0;
 
@@ -262,7 +310,7 @@ internal sealed class Apu
 					(_pulse1LengthCounter.Enable ? 1 : 0) |
 					((_pulse2LengthCounter.Enable ? 1 : 0) << 2) |
 					((_triangle.LengthCounter.Enable ? 1 : 0) << 3) |
-					((_noiseLengthCounterEnable ? 1 : 0) << 4) |
+					((_noise.LengthCounter.Enable ? 1 : 0) << 4) |
 					((_dmcControlEnable ? 1 : 0) << 5)
 				);
 		}
@@ -348,11 +396,46 @@ internal sealed class Apu
 
 				_triangle.LinearCounterReloadFlag = true;
 				break;
+			case 0x400C:
+				_noise.LengthCounter.Halt = ((value >> 5) & 1) != 0;
+				_noise.Envelope.LoopFlag = _pulse2LengthCounter.Halt;
+				_noise.Envelope.ConstantVolumeFlag = ((value >> 4) & 1) != 0;
+				_noise.Envelope.VolumeOrDividerReload = value & 0b1111;
+				break;
+			case 0x400E:
+				_noise.ModeFlag = ((value >> 7) & 1) != 0;
+				_noise.TimerReload = (value & 0b1111) switch
+				{
+					0x0 => 4,
+					0x1 => 8,
+					0x2 => 16,
+					0x3 => 32,
+					0x4 => 64,
+					0x5 => 96,
+					0x6 => 128,
+					0x7 => 160,
+					0x8 => 202,
+					0x9 => 254,
+					0xA => 380,
+					0xB => 508,
+					0xC => 762,
+					0xD => 1016,
+					0xE => 2034,
+					0xF => 4068,
+					_ => throw new UnreachableException()
+				};
+				break;
+			case 0x400F:
+				if (_noise.LengthCounter.Enable)
+					_noise.LengthCounter.Value = _lengthCounterLookupTable[(value >> 3) & 0b11111];
+
+				_noise.Envelope.StartFlag = true;
+				break;
 			case 0x4015:
 				_pulse1LengthCounter.Enable = (value & 1) != 0;
 				_pulse2LengthCounter.Enable = ((value >> 1) & 1) != 0;
 				_triangle.LengthCounter.Enable = ((value >> 2) & 1) != 0;
-				_noiseLengthCounterEnable = ((value >> 3) & 1) != 0;
+				_noise.LengthCounter.Enable = ((value >> 3) & 1) != 0;
 				_dmcControlEnable = ((value >> 4) & 1) != 0;
 
 				if (!_pulse1LengthCounter.Enable)
@@ -382,6 +465,8 @@ internal sealed class Apu
 			_pulse1Sequencer.Step();
 			_pulse2Sequencer.Step();
 		}
+
+		_noise.Step();
 
 		_triangle.StepSequencer();
 
@@ -486,6 +571,7 @@ internal sealed class Apu
 	{
 		_pulse1Envelope.Step();
 		_pulse2Envelope.Step();
+		_noise.Envelope.Step();
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -500,6 +586,7 @@ internal sealed class Apu
 		_pulse1LengthCounter.Step();
 		_pulse2LengthCounter.Step();
 		_triangle.LengthCounter.Step();
+		_noise.LengthCounter.Step();
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -509,7 +596,8 @@ internal sealed class Apu
 		_pulse2Sweep.Step();
 	}
 
-	public float GetOutput()
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	private double GetPulse1()
 	{
 		var pulse1freq = (Emu.CyclesPerSecond / 12.0) / (16.0 * (_pulse1Sequencer.TimerReload + 1));
 		var pulse1dutyCycle = _pulse1Sequencer.DutyCycle switch
@@ -520,8 +608,16 @@ internal sealed class Apu
 			3 => 0.25,
 			_ => 0.0
 		};
-		var pulse1 = _pulse1Generator.GenerateSample(pulse1freq, pulse1dutyCycle) * _pulse1Envelope.Volume;
 
+		if (_pulse1LengthCounter.Value == 0 || _pulse1Sweep.MuteChannel)
+			return 0;
+
+		return _pulse1Generator.GenerateSample(pulse1freq, pulse1dutyCycle) * _pulse1Envelope.Volume;
+	}
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	private double GetPulse2()
+	{
 		var pulse2freq = Emu.CyclesPerSecond / 12.0 / (16.0 * (_pulse2Sequencer.TimerReload + 1));
 		var pulse2dutyCycle = _pulse2Sequencer.DutyCycle switch
 		{
@@ -531,18 +627,26 @@ internal sealed class Apu
 			3 => 0.25,
 			_ => 0.0
 		};
-		var pulse2 = _pulse2Generator.GenerateSample(pulse2freq, pulse2dutyCycle) * _pulse2Envelope.Volume;
-
-		var triangle = _triangle.Output;
-
-		var noise = 0.0;
-		var dmc = 0.0;
-
-		if (_pulse1LengthCounter.Value == 0 || _pulse1Sweep.MuteChannel)
-			pulse1 = 0;
 
 		if (_pulse2LengthCounter.Value == 0 || _pulse2Sweep.MuteChannel)
-			pulse2 = 0;
+			return 0;
+
+		return _pulse2Generator.GenerateSample(pulse2freq, pulse2dutyCycle) * _pulse2Envelope.Volume;
+	}
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	private double GetTriangle() => _triangle.Output;
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	private double GetNoise() => _noise.Output && _noise.LengthCounter.Value != 0 ? _noise.Envelope.Volume : 0;
+
+	public float GetOutput()
+	{
+		var pulse1 = GetPulse1();
+		var pulse2 = GetPulse2();
+		var triangle = GetTriangle();
+		var noise = GetNoise();
+		var dmc = 0;
 
 		var pulseOut = 0.0;
 		var tndOut = 0.0;
@@ -553,6 +657,7 @@ internal sealed class Apu
 		if (triangle != 0.0 || noise != 0.0 || dmc != 0.0)
 			tndOut = 159.79 / ((1 / ((triangle / 8227.0) + (noise / 12241.0) + (dmc / 22638.0))) + 100.0);
 
-		return (float)(pulseOut + tndOut);
+		var sample = pulseOut + tndOut;
+		return (float)_lowPassFilter.Filter(sample);
 	}
 }

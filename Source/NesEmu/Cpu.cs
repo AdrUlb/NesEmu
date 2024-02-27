@@ -1191,7 +1191,6 @@ internal sealed class Cpu
 						// If page boundary was not crossed, do not incur penalty cycle, address is correct
 						//  and will only be read once immediately in this cycle, finishing the instruction
 						if (!_pageBoundaryCrossed)
-
 							goto case 4;
 
 						// If page boundary was crossed, read from incorrect address,

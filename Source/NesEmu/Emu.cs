@@ -10,7 +10,8 @@ internal sealed class Emu : IDisposable
 	private volatile bool _running = false;
 
 	public const int CyclesPerSecond = 21477272;
-	public const double FramesPerSecond = CyclesPerSecond / 4.0 / 262.0 / 341.0;
+	public const double FramesPerSecond = CyclesPerSecond / 4.0 / 262.5 / 341.0;
+	private const double MillisPerFrame = 1000.0 / FramesPerSecond;
 	public static readonly double TicksPerFrame = Stopwatch.Frequency / FramesPerSecond;
 	private static int _cyclesPerAudioSample = CyclesPerSecond / 44100;
 
@@ -52,17 +53,16 @@ internal sealed class Emu : IDisposable
 
 	~Emu() => Dispose(false);
 
+	private float _sample;
+
 	private void EmuThreadProc()
 	{
-		long lastTime = Stopwatch.GetTimestamp();
-
 		uint cycles = 0;
-
-		var audioTimer = Stopwatch.StartNew();
 
 		var maxAudioPadding = _audioClient.FramesPerSecond / 100;
 
 		_audioClient.Start();
+
 		while (_running)
 		{
 			cycles++;
@@ -85,16 +85,19 @@ internal sealed class Emu : IDisposable
 				Ppu.Tick();
 
 			if (!wasVblank && Ppu.StatusVblank)
+			{
 				Vblank?.Invoke(this, EventArgs.Empty);
+			}
 
 			if (cycles % _cyclesPerAudioSample == 0)
 			{
-				var sample = Apu.GetOutput();
-
+				_sample = Apu.GetOutput();
 				while (_audioClient.PaddingFrames > maxAudioPadding) { }
-				var buffer = _audioClient.GetBuffer<float>(1);
-				buffer[0] = sample;
-				_audioClient.ReleaseBuffer(1);
+				if (_audioClient.TryGetBuffer<float>(1, out var buffer))
+				{
+					buffer[0] = _sample;
+					_audioClient.ReleaseBuffer(1);
+				}
 			}
 		}
 		_audioClient.Stop();
@@ -106,7 +109,6 @@ internal sealed class Emu : IDisposable
 			return;
 
 		_running = true;
-
 		_emuThread.Start();
 	}
 

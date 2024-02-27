@@ -276,10 +276,9 @@ internal sealed class Ppu
 
 					var y = _scanline - yPos;
 
-
-					if (y is < 0 or >= 8)
+					if (y < 0 || y >= 8)
 						continue;
-
+						
 					_secondaryOam[(spriteCount * 4) + 0] = _oam[off + 0];
 					_secondaryOam[(spriteCount * 4) + 1] = _oam[off + 1];
 					_secondaryOam[(spriteCount * 4) + 2] = _oam[off + 2];
@@ -301,7 +300,7 @@ internal sealed class Ppu
 				for (var screenX = 0; screenX < ScreenWidth; screenX++)
 				{
 					_spritePixels[screenX] = Color.Transparent;
-					var spritePatternTable = _ctrlSpritePatternTable ? PpuBus.PatternTable1Address : PpuBus.PatternTable0Address;
+					var patternTable = _ctrlSpritePatternTable ? PpuBus.PatternTable1Address : PpuBus.PatternTable0Address;
 					if (_maskShowSprites)
 					{
 						for (var i = 0; i < 8; i++)
@@ -323,8 +322,10 @@ internal sealed class Ppu
 							if (x is < 0 or >= 8)
 								continue;
 
+							var usePatternTable = patternTable;
+
 							var paletteIndex = attrib & 0b11;
-							var tileOff = (tileId * 16) + spritePatternTable;
+							var tileOff = (tileId * 16) + usePatternTable;
 
 							var paletteOffset = PpuBus.PaletteRamAddress + 0x11 + (paletteIndex * 4);
 
