@@ -25,18 +25,14 @@ internal sealed class Emu : IDisposable
 
 	public Emu()
 	{
-		Cpu = new();
-		Ppu = new Ppu(Cpu.Bus);
-		Apu = new();
+		Cpu = new(this);
+		Ppu = new Ppu(this);
+		Apu = new(this);
 		Controller = new();
-
-		Cpu.Bus.Ppu = Ppu;
-		Cpu.Bus.Apu = Apu;
-		Cpu.Bus.Controller = Controller;
 
 		_audioClient = new(AudioFormat.IeeeFloat, 44100, 32, 1);
 
-		using (var fs = File.OpenRead(@"C:\Stuff\Roms\NES\nes-test-roms-master\apu_test\apu_test.nes"))
+		using (var fs = File.OpenRead(@"C:\Stuff\Roms\NES\tetris.nes"))
 		{
 			var cart = new Cartridge(Ppu, fs);
 			Cpu.Bus.Cartridge = cart;
@@ -70,13 +66,13 @@ internal sealed class Emu : IDisposable
 				Cpu.RequestNmi();
 			}
 
-			if (Apu.RequestFrameInterrupt)
+			if (Apu.RequestFrameInterrupt || Apu.RequestDmcInterrupt)
 				Cpu.RequestIrq();
 
 			if (cycles % 12 == 0 && Ppu.OamWaitCycles == 0)
 			{
-				Apu.Tick();
 				Cpu.Tick();
+				Apu.Tick();
 			}
 
 			var wasVblank = Ppu.StatusVblank;

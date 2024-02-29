@@ -13,7 +13,7 @@ internal sealed class Ppu
 	private const int _cyclesPerScanline = 341;
 
 	public readonly PpuBus Bus;
-	private readonly CpuBus _cpuBus;
+	private readonly Emu _emu;
 
 	private int _scanline = 261;
 	private int _cycle = 258;
@@ -106,10 +106,10 @@ internal sealed class Ppu
 
 	public int OamWaitCycles { get; private set; } = 0;
 
-	public Ppu(CpuBus cpuBus)
+	public Ppu(Emu emu)
 	{
 		Bus = new(this);
-		_cpuBus = cpuBus;
+		_emu = emu;
 
 		using var fs = File.OpenRead("palette.pal");
 
@@ -237,7 +237,7 @@ internal sealed class Ppu
 				var address = (ushort)(value << 8);
 				for (var i = 0; i < _oam.Length; i++)
 				{
-					_oam[(_oamAddr + i) & 0xFF] = _cpuBus.ReadByte(address);
+					_oam[(_oamAddr + i) & 0xFF] = _emu.Cpu.Bus.ReadByte(address);
 					address++;
 				}
 				OamWaitCycles = 514;

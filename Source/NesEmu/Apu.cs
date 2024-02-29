@@ -1,10 +1,9 @@
 ﻿using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using System.Text;
 
 namespace NesEmu;
 
-internal sealed class Apu
+internal sealed class Apu(Emu emu)
 {
 	private class LowPassFilter(double alpha)
 	{
@@ -271,11 +270,106 @@ internal sealed class Apu
 		}
 	}
 
+	// https://www.nesdev.org/wiki/APU_DMC
+	private struct DmcChannel(Emu emu)
+	{
+		public bool IrqEnabledFlag;
+		public bool RequestInterrupt = false;
+		public bool LoopFlag;
+		public int Rate;
+		public int SampleAddress;
+		public int SampleLength;
+
+		public int Output = 0;
+
+		public int CurrentAddress;
+		public int BytesRemaining = 0;
+		public bool SampleBufferEmpty = true;
+
+		public bool SilenceFlag = true;
+
+		private int _shiftRegister;
+
+		private int _bitsRemaining = 0;
+
+		private int _timer;
+		private int _sampleBuffer;
+
+		public void RestartSample()
+		{
+			CurrentAddress = SampleAddress;
+			BytesRemaining = SampleLength;
+		}
+
+		public void Step()
+		{
+			if (SampleBufferEmpty && BytesRemaining != 0)
+			{
+				_sampleBuffer = emu.Cpu.Bus.ReadByte((ushort)CurrentAddress);
+				SampleBufferEmpty = false;
+				CurrentAddress++;
+
+				if (CurrentAddress > 0xFFFF)
+					CurrentAddress = 0x8000;
+
+				BytesRemaining--;
+
+				if (BytesRemaining == 0)
+				{
+					if (LoopFlag)
+					{
+						RestartSample();
+					}
+					else if (IrqEnabledFlag)
+						RequestInterrupt = true;
+				}
+			}
+
+			if (_timer <= 0)
+			{
+				_timer = Rate;
+
+				if (!SilenceFlag)
+				{
+					var newOutput = Output;
+					if ((_shiftRegister & 1) == 1)
+					{
+						newOutput += 2;
+					}
+					else
+						newOutput -= 2;
+
+					if (newOutput is >= 0 and <= 127)
+						Output = newOutput;
+				}
+
+				_shiftRegister >>= 1;
+				_bitsRemaining--;
+				if (_bitsRemaining <= 0)
+				{
+					_bitsRemaining = 8;
+					if (SampleBufferEmpty)
+					{
+						SilenceFlag = true;
+					}
+					else
+					{
+						SilenceFlag = false;
+						_shiftRegister = _sampleBuffer;
+						SampleBufferEmpty = true;
+					}
+				}
+			}
+			_timer--;
+		}
+	}
+
 	private readonly PulseChannel _pulse1 = new(true);
 	private readonly PulseChannel _pulse2 = new(false);
 	private TriangleChannel _triangle = new();
 	private NoiseChannel _noise = new();
-	private readonly LowPassFilter _lowPassFilter = new(0.4);
+	private DmcChannel _dmc = new(emu);
+	private readonly LowPassFilter _lowPassFilter = new(0.6);
 
 	private int _frameCounter = 0;
 	private int _frameCounterMode = 1;
@@ -286,8 +380,11 @@ internal sealed class Apu
 	private ulong _cycles = 0;
 
 	private static readonly byte[] _lengthCounterLookupTable = [10, 254, 20, 2, 40, 4, 80, 6, 160, 8, 60, 10, 14, 12, 26, 14, 12, 16, 24, 18, 48, 20, 96, 22, 192, 24, 72, 26, 16, 28, 32, 30];
+	private static readonly int[] _dmcRates = [428, 380, 340, 320, 286, 254, 226, 214, 190, 160, 142, 128, 106, 84, 72, 54];
+	private static readonly int[] _noiseTimerPeriods = [4, 8, 16, 32, 64, 96, 128, 160, 202, 254, 380, 508, 762, 1016, 2034, 4068];
 
-	public bool RequestFrameInterrupt { get; set; } = false;
+	public bool RequestFrameInterrupt { get; private set; } = false;
+	public bool RequestDmcInterrupt => _dmc.RequestInterrupt;
 
 	public byte CpuReadByte(ushort address)
 	{
@@ -300,7 +397,9 @@ internal sealed class Apu
 						((_pulse2.LengthCounter.Value != 0 ? 1 : 0) << 1) |
 						((_triangle.LengthCounter.Value != 0 ? 1 : 0) << 2) |
 						((_noise.LengthCounter.Value != 0 ? 1 : 0) << 3) |
-						((RequestFrameInterrupt ? 1 : 0) << 6));
+						((_dmc.BytesRemaining > 0 ? 1 : 0) << 4) |
+						((RequestFrameInterrupt ? 1 : 0) << 6) |
+						((RequestDmcInterrupt ? 1 : 0) << 7));
 
 					RequestFrameInterrupt = false;
 
@@ -402,32 +501,30 @@ internal sealed class Apu
 				break;
 			case 0x400E:
 				_noise.ModeFlag = ((value >> 7) & 1) != 0;
-				_noise.TimerReload = (value & 0b1111) switch
-				{
-					0x0 => 4,
-					0x1 => 8,
-					0x2 => 16,
-					0x3 => 32,
-					0x4 => 64,
-					0x5 => 96,
-					0x6 => 128,
-					0x7 => 160,
-					0x8 => 202,
-					0x9 => 254,
-					0xA => 380,
-					0xB => 508,
-					0xC => 762,
-					0xD => 1016,
-					0xE => 2034,
-					0xF => 4068,
-					_ => throw new UnreachableException()
-				};
+				_noise.TimerReload = _noiseTimerPeriods[value & 0b1111];
 				break;
 			case 0x400F:
 				if (_noise.LengthCounter.Enable)
 					_noise.LengthCounter.Value = _lengthCounterLookupTable[(value >> 3) & 0b11111];
 
 				_noise.Envelope.StartFlag = true;
+				break;
+			case 0x4010:
+				_dmc.IrqEnabledFlag = ((value >> 7) & 1) != 0;
+				_dmc.LoopFlag = ((value >> 6) & 1) != 0;
+				_dmc.Rate = _dmcRates[value & 0b1111];
+
+				if (!_dmc.IrqEnabledFlag)
+					_dmc.RequestInterrupt = false;
+				break;
+			case 0x4011:
+				_dmc.Output = value & 0b0111_1111;
+				break;
+			case 0x4012:
+				_dmc.SampleAddress = 0xC000 + (value * 64);
+				break;
+			case 0x4013:
+				_dmc.SampleLength = (value * 16) + 1;
 				break;
 			case 0x4015:
 				_pulse1.LengthCounter.Enable = (value & 1) != 0;
@@ -446,6 +543,16 @@ internal sealed class Apu
 
 				if (!_noise.LengthCounter.Enable)
 					_noise.LengthCounter.Value = 0;
+
+				if (((value >> 4) & 1) != 0)
+				{
+					if (_dmc.BytesRemaining == 0)
+						_dmc.RestartSample();
+				}
+				else
+					_dmc.BytesRemaining = 0;
+
+				_dmc.RequestInterrupt = false;
 				break;
 			case 0x4017:
 				_frameCounterMode = (value >> 7) & 1;
@@ -471,6 +578,7 @@ internal sealed class Apu
 		}
 
 		_noise.Step();
+		_dmc.Step();
 
 		_triangle.StepSequencer();
 
@@ -607,6 +715,8 @@ internal sealed class Apu
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	private double GetPulse1()
 	{
+		//return _pulse1.Output ? _pulse1.Envelope.Volume : 0;
+
 		var pulse1freq = (Emu.CyclesPerSecond / 12.0) / (16.0 * (_pulse1.TimerReload + 1));
 		var pulse1dutyCycle = _pulse1.DutyCycle switch
 		{
@@ -626,6 +736,8 @@ internal sealed class Apu
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	private double GetPulse2()
 	{
+		//return _pulse2.Output ? _pulse2.Envelope.Volume : 0;
+
 		var pulse2freq = Emu.CyclesPerSecond / 12.0 / (16.0 * (_pulse2.TimerReload + 1));
 		var pulse2dutyCycle = _pulse2.DutyCycle switch
 		{
@@ -648,13 +760,15 @@ internal sealed class Apu
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	private double GetNoise() => _noise.Output && _noise.LengthCounter.Value != 0 ? _noise.Envelope.Volume : 0;
 
+	private double GetDmc() => _dmc.Output;
+
 	public float GetOutput()
 	{
 		var pulse1 = GetPulse1();
 		var pulse2 = GetPulse2();
 		var triangle = GetTriangle();
 		var noise = GetNoise();
-		var dmc = 0;
+		var dmc = GetDmc();
 
 		var pulseOut = 0.0;
 		var tndOut = 0.0;

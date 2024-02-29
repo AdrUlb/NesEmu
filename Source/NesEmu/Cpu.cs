@@ -487,9 +487,9 @@ internal sealed class Cpu
 		}
 	}
 
-	public Cpu()
+	public Cpu(Emu emu)
 	{
-		Bus = new();
+		Bus = new(emu);
 	}
 
 	public void Reset()

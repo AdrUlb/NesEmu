@@ -1,19 +1,11 @@
 ﻿namespace NesEmu;
 
 // https://www.nesdev.org/wiki/CPU_memory_map
-internal sealed class CpuBus
+internal sealed class CpuBus(Emu emu)
 {
 	private readonly byte[] _ram = new byte[0x0800];
 
-	public Ppu? Ppu;
-	public Apu? Apu;
-	public Controller? Controller = null;
 	public Cartridge? Cartridge = null;
-
-	public CpuBus()
-	{
-
-	}
 
 	public byte ReadByte(ushort address)
 	{
@@ -28,14 +20,14 @@ internal sealed class CpuBus
 			>= 0x0800 and < 0x1000 => _ram[address - 0x0800],
 			>= 0x1000 and < 0x1800 => _ram[address - 0x1000],
 			>= 0x1800 and < 0x2000 => _ram[address - 0x1800],
-			>= 0x2000 and < 0x4000 => Ppu?.CpuReadByte(((address - 0x2000) % 8) + 0x2000) ?? 0xFF,
-			>= 0x4000 and <= 0x4008 => Apu?.CpuReadByte(address) ?? 0xFF,
-			>= 0x400A and <= 0x400C => Apu?.CpuReadByte(address) ?? 0xFF,
-			>= 0x400E and <= 0x4013 => Apu?.CpuReadByte(address) ?? 0xFF,
-			0x4014 => Ppu?.CpuReadByte(address) ?? 0xFF,
-			0x4015 => Apu?.CpuReadByte(address) ?? 0xFF,
-			0x4016 => Controller?.CpuReadByte(address) ?? 0,
-			0x4017 => Apu?.CpuReadByte(address) ?? 0,
+			>= 0x2000 and < 0x4000 => emu.Ppu.CpuReadByte(((address - 0x2000) % 8) + 0x2000),
+			>= 0x4000 and <= 0x4008 => emu.Apu.CpuReadByte(address),
+			>= 0x400A and <= 0x400C => emu.Apu.CpuReadByte(address),
+			>= 0x400E and <= 0x4013 => emu.Apu.CpuReadByte(address),
+			0x4014 => emu.Ppu.CpuReadByte(address),
+			0x4015 => emu.Apu.CpuReadByte(address),
+			0x4016 => emu.Controller.CpuReadByte(address),
+			0x4017 => emu.Apu.CpuReadByte(address),
 			0x4018 => 0,
 			_ => 0xFF
 		};
@@ -53,14 +45,14 @@ internal sealed class CpuBus
 			case 0x0800 and < 0x1000: _ram[address - 0x0800] = value; break;
 			case 0x1000 and < 0x1800: _ram[address - 0x1000] = value; break;
 			case 0x1800 and < 0x2000: _ram[address - 0x1800] = value; break;
-			case >= 0x2000 and < 0x4000: Ppu?.CpuWriteByte(((address - 0x2000) % 8) + 0x2000, value); break;
-			case >= 0x4000 and <= 0x4008: Apu?.CpuWriteByte(address, value); break;
-			case >= 0x400A and <= 0x400C: Apu?.CpuWriteByte(address, value); break;
-			case >= 0x400E and <= 0x4013: Apu?.CpuWriteByte(address, value); break;
-			case 0x4014: Ppu?.CpuWriteByte(address, value); break;
-			case 0x4015: Apu?.CpuWriteByte(address, value);break;
-			case 0x4016: Controller?.CpuWriteByte(address, value); break;
-			case 0x4017: Apu?.CpuWriteByte(address, value);break;
+			case >= 0x2000 and < 0x4000: emu.Ppu.CpuWriteByte(((address - 0x2000) % 8) + 0x2000, value); break;
+			case >= 0x4000 and <= 0x4008: emu.Apu.CpuWriteByte(address, value); break;
+			case >= 0x400A and <= 0x400C: emu.Apu.CpuWriteByte(address, value); break;
+			case >= 0x400E and <= 0x4013: emu.Apu.CpuWriteByte(address, value); break;
+			case 0x4014: emu.Ppu.CpuWriteByte(address, value); break;
+			case 0x4015: emu.Apu.CpuWriteByte(address, value); break;
+			case 0x4016: emu.Controller.CpuWriteByte(address, value); break;
+			case 0x4017: emu.Apu.CpuWriteByte(address, value); break;
 		}
 	}
 }
