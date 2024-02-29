@@ -5,8 +5,16 @@ internal sealed class Mapper0 : Mapper
 	private readonly byte[] _prgRom;
 	private readonly byte[] _chrRom;
 
+	private bool _chrRam = false;
+
 	public Mapper0(int prgRomBanks, int chrRomBanks, MirroringMode mirroringMode, Stream data)
 	{
+		if (chrRomBanks == 0)
+		{
+			chrRomBanks = 1;
+			_chrRam = true;
+		}
+
 		var prgRomSize = prgRomBanks * 0x4000; // 16384
 		var chrRomSize = chrRomBanks * 0x2000; // 8192
 
@@ -17,10 +25,12 @@ internal sealed class Mapper0 : Mapper
 			throw new NotImplementedException();
 
 		_prgRom = new byte[prgRomSize];
+
 		_chrRom = new byte[chrRomSize];
 
 		data.ReadExactly(_prgRom);
-		data.ReadExactly(_chrRom);
+		if (!_chrRam)
+			data.ReadExactly(_chrRom);
 
 		SetMirroringMode(mirroringMode);
 	}
@@ -42,7 +52,12 @@ internal sealed class Mapper0 : Mapper
 
 	public override void CpuWriteByte(ushort address, byte value)
 	{
-
+		switch (address)
+		{
+			case >= 0x0000 and <= 0x1FFF when _chrRam:
+				_chrRom[address] = value;
+				break;
+		}
 	}
 
 	public override byte PpuReadByte(Ppu ppu, ushort address)
@@ -68,6 +83,7 @@ internal sealed class Mapper0 : Mapper
 
 		switch (address)
 		{
+			case < PpuBus.Nametable0Address when _chrRam:  _chrRom[address] = value; break;
 			case >= PpuBus.Nametable0Address and < PpuBus.Nametable1Address: ppu.Vram[address - PpuBus.Nametable0Address + Nametable0Offset] = value; break;
 			case >= PpuBus.Nametable1Address and < PpuBus.Nametable2Address: ppu.Vram[address - PpuBus.Nametable1Address + Nametable1Offset] = value; break;
 			case >= PpuBus.Nametable2Address and < PpuBus.Nametable3Address: ppu.Vram[address - PpuBus.Nametable2Address + Nametable2Offset] = value; break;

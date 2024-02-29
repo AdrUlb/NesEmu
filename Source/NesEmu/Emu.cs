@@ -23,8 +23,6 @@ internal sealed class Emu : IDisposable
 
 	private readonly WasapiAudioClient _audioClient;
 
-	private readonly Stopwatch _sw = new();
-
 	public Emu()
 	{
 		Cpu = new();
@@ -38,7 +36,7 @@ internal sealed class Emu : IDisposable
 
 		_audioClient = new(AudioFormat.IeeeFloat, 44100, 32, 1);
 
-		using (var fs = File.OpenRead(@"C:\Stuff\Roms\NES\tetris.nes"))
+		using (var fs = File.OpenRead(@"C:\Stuff\Roms\NES\nes-test-roms-master\apu_test\apu_test.nes"))
 		{
 			var cart = new Cartridge(Ppu, fs);
 			Cpu.Bus.Cartridge = cart;
@@ -48,7 +46,6 @@ internal sealed class Emu : IDisposable
 		Cpu.Reset();
 
 		_emuThread = new Thread(EmuThreadProc);
-		_sw.Start();
 	}
 
 	~Emu() => Dispose(false);
@@ -67,16 +64,19 @@ internal sealed class Emu : IDisposable
 		{
 			cycles++;
 
-			if (Ppu.RequestVblankInterrupt)
+			if (Ppu.RequestNmi)
 			{
-				Ppu.RequestVblankInterrupt = false;
+				Ppu.RequestNmi = false;
 				Cpu.RequestNmi();
 			}
 
+			if (Apu.RequestFrameInterrupt)
+				Cpu.RequestIrq();
+
 			if (cycles % 12 == 0 && Ppu.OamWaitCycles == 0)
 			{
-				Cpu.Tick();
 				Apu.Tick();
+				Cpu.Tick();
 			}
 
 			var wasVblank = Ppu.StatusVblank;

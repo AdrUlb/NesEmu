@@ -455,7 +455,9 @@ internal sealed class Cpu
 	private byte _fetchHigh;
 	private byte _fetchOperand;
 	private bool _pageBoundaryCrossed;
-	private bool _nmi = false;
+	private bool _requestNmi = false;
+	private bool _requestIrq = false;
+	private bool _inIrq = false;
 
 	private Operation CurrentOperation => _operations[_currentOpcode];
 
@@ -504,7 +506,8 @@ internal sealed class Cpu
 		_flagCarry = false;
 	}
 
-	public void RequestNmi() => _nmi = true;
+	public void RequestNmi() => _requestNmi = true;
+	public void RequestIrq() => _requestIrq = true;
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	private byte ReadByte(ushort address) => Bus.ReadByte(address);
@@ -553,9 +556,9 @@ internal sealed class Cpu
 	{
 		if (_step == 0)
 		{
-			if (_nmi)
+			if (_requestNmi)
 			{
-				_nmi = false;
+				_requestNmi = false;
 				PushByte((byte)(_regPc >> 8));
 				PushByte((byte)(_regPc & 0xFF));
 				PushByte(RegStatus);
@@ -565,7 +568,13 @@ internal sealed class Cpu
 				_flagInterruptDisable = true;
 			}
 
-			_currentOpcode = FetchByte();
+			if (_requestIrq && !_flagInterruptDisable)
+			{
+				_currentOpcode = 0;
+				_inIrq = true;
+			}
+			else
+				_currentOpcode = FetchByte();
 
 			/*var sb = new StringBuilder();
 			sb.Append($"{(ushort)(_regPc - 1):X4}  {_currentOpcode:X2}");
@@ -1702,7 +1711,7 @@ internal sealed class Cpu
 				_step++;
 				break;
 			case 4: // push P on stack (with B flag set), decrement S
-				_flagB = true;
+				_flagB = !_inIrq;
 				WriteByte(RegSp, RegStatus);
 				_regSpLo--;
 				_flagB = false;
@@ -1753,6 +1762,7 @@ internal sealed class Cpu
 			case 5: // pull PCH from stack
 				_regPc |= (ushort)(ReadByte(RegSp) << 8);
 				_step = 0;
+				_inIrq = false;
 				break;
 			default:
 				throw new UnreachableException();

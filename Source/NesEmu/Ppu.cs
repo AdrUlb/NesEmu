@@ -66,7 +66,7 @@ internal sealed class Ppu
 
 	public bool StatusVblank { get; private set; } = false;
 
-	public bool RequestVblankInterrupt { get; set; } = false;
+	public bool RequestNmi { get; set; } = false;
 
 	public bool RenderingEnabled => _maskShowBackground | _maskShowSprites;
 
@@ -465,7 +465,7 @@ internal sealed class Ppu
 		{
 			StatusVblank = true;
 			if (_ctrlEnableVblankNmi)
-				RequestVblankInterrupt = true;
+				RequestNmi = true;
 		}
 
 		if (_scanline == 261 && _cycle == 1)
@@ -542,7 +542,10 @@ internal sealed class Ppu
 		// If rendering is disabled, render EXT color
 		if (!RenderingEnabled)
 		{
-			Framebuffer[_nextPixelIndex++] = _palette[Bus.ReadByte(PpuBus.PaletteRamAddress)];
+			var paletteIndex = Bus.ReadByte(PpuBus.PaletteRamAddress);
+			paletteIndex %= (byte)_palette.Length;
+			var color = _palette[paletteIndex];
+			Framebuffer[_nextPixelIndex++] = color;
 			return;
 		}
 

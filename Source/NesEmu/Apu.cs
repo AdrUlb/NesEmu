@@ -1,5 +1,6 @@
 ﻿using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Text;
 
 namespace NesEmu;
 
@@ -15,23 +16,6 @@ internal sealed class Apu
 			var output = (_alpha * input) + ((1 - _alpha) * _lastOutput);
 			_lastOutput = output;
 			return output;
-		}
-	}
-
-	private struct SquareWaveGenerator
-	{
-		private double _state;
-
-		private const double _sampleRate = 44100;
-
-		public double GenerateSample(double freq, double dutyCycle)
-		{
-			_state += freq;
-			_state %= _sampleRate;
-
-			var sample = _state / _sampleRate <= dutyCycle ? 1.0 : 0.0;
-
-			return sample;
 		}
 	}
 
@@ -84,35 +68,6 @@ internal sealed class Apu
 			Volume = ConstantVolumeFlag ? VolumeOrDividerReload : DecayLevelCounter;
 		}
 	}
-
-	// https://www.nesdev.org/wiki/APU_Pulse
-	private struct PulseSequencerUnit
-	{
-		private static readonly int[][] _dutyCycles = [[0, 1, 0, 0, 0, 0, 0, 0], [0, 1, 1, 0, 0, 0, 0, 0], [0, 1, 1, 1, 1, 0, 0, 0], [1, 0, 0, 1, 1, 1, 1, 1]];
-
-		public int DutyCycle;
-		public int DutyIndex;
-
-		public int TimerReload;
-		public int Timer;
-
-		public bool Output;
-
-		public void Step()
-		{
-			if (Timer == 0)
-			{
-				Timer = TimerReload;
-				DutyIndex++;
-				DutyIndex %= 8;
-			}
-			else
-				Timer--;
-
-			Output = _dutyCycles[DutyCycle][DutyIndex] != 0;
-		}
-	}
-
 
 	// https://www.nesdev.org/wiki/APU_Length_Counter
 	private struct LengthCounter
@@ -182,6 +137,57 @@ internal sealed class Apu
 					_divider--;
 			}
 		}
+	}
+
+	private class PulseChannel
+	{
+		private const double _sampleRate = 44100;
+
+		private static readonly int[][] _dutyCycles = [[0, 1, 0, 0, 0, 0, 0, 0], [0, 1, 1, 0, 0, 0, 0, 0], [0, 1, 1, 1, 1, 0, 0, 0], [1, 0, 0, 1, 1, 1, 1, 1]];
+
+		public EnvelopeUnit Envelope = new();
+		public LengthCounter LengthCounter = new();
+		public SweepUnit Sweep;
+
+		public int DutyCycle;
+		public int DutyIndex;
+
+		public int TimerReload;
+		public int Timer;
+
+		public bool Output;
+
+		private double _sampleGeneratorState;
+
+		public PulseChannel(bool isPulse1)
+		{
+			Sweep = new(() => TimerReload, value => TimerReload = value, isPulse1);
+		}
+
+		public void StepSequencer()
+		{
+			if (Timer == 0)
+			{
+				Timer = TimerReload;
+				DutyIndex++;
+				DutyIndex %= 8;
+			}
+			else
+				Timer--;
+
+			Output = _dutyCycles[DutyCycle][DutyIndex] != 0;
+		}
+
+		public double GenerateSample(double freq, double dutyCycle)
+		{
+			_sampleGeneratorState += freq;
+			_sampleGeneratorState %= _sampleRate;
+
+			var sample = _sampleGeneratorState / _sampleRate <= dutyCycle ? 1.0 : 0.0;
+
+			return sample;
+		}
+
 	}
 
 	// https://www.nesdev.org/wiki/APU_Triangle
@@ -265,53 +271,45 @@ internal sealed class Apu
 		}
 	}
 
-	private EnvelopeUnit _pulse1Envelope = new();
-	private PulseSequencerUnit _pulse1Sequencer = new();
-	private LengthCounter _pulse1LengthCounter = new();
-	private SweepUnit _pulse1Sweep;
-	private SquareWaveGenerator _pulse1Generator = new();
-
-	private EnvelopeUnit _pulse2Envelope = new();
-	private PulseSequencerUnit _pulse2Sequencer = new();
-	private LengthCounter _pulse2LengthCounter = new();
-	private SweepUnit _pulse2Sweep;
-	private SquareWaveGenerator _pulse2Generator = new();
-
+	private readonly PulseChannel _pulse1 = new(true);
+	private readonly PulseChannel _pulse2 = new(false);
 	private TriangleChannel _triangle = new();
-
 	private NoiseChannel _noise = new();
-
-	private LowPassFilter _lowPassFilter = new(0.4);
+	private readonly LowPassFilter _lowPassFilter = new(0.4);
 
 	private int _frameCounter = 0;
 	private int _frameCounterMode = 1;
 	private bool _frameCounterInterruptInhibit = false;
-	private bool _frameCounterInterrupt = false;
 	private int _frameCounterResetCounter = 0;
-
-	private bool _dmcControlEnable = false;
+	private bool _frameCounterClockOn0InMode5 = false;
 
 	private ulong _cycles = 0;
 
 	private static readonly byte[] _lengthCounterLookupTable = [10, 254, 20, 2, 40, 4, 80, 6, 160, 8, 60, 10, 14, 12, 26, 14, 12, 16, 24, 18, 48, 20, 96, 22, 192, 24, 72, 26, 16, 28, 32, 30];
 
-	public Apu()
-	{
-		_pulse1Sweep = new(() => _pulse1Sequencer.TimerReload, value => _pulse1Sequencer.TimerReload = value, true);
-		_pulse2Sweep = new(() => _pulse2Sequencer.TimerReload, value => _pulse2Sequencer.TimerReload = value, false);
-	}
+	public bool RequestFrameInterrupt { get; set; } = false;
 
 	public byte CpuReadByte(ushort address)
 	{
 		switch (address)
 		{
 			case 0x4015:
+				{
+					var ret = (byte)(
+						(_pulse1.LengthCounter.Value != 0 ? 1 : 0) |
+						((_pulse2.LengthCounter.Value != 0 ? 1 : 0) << 1) |
+						((_triangle.LengthCounter.Value != 0 ? 1 : 0) << 2) |
+						((_noise.LengthCounter.Value != 0 ? 1 : 0) << 3) |
+						((RequestFrameInterrupt ? 1 : 0) << 6));
+
+					RequestFrameInterrupt = false;
+
+					return ret;
+				}
+			case 0x4017:
 				return (byte)(
-					(_pulse1LengthCounter.Enable ? 1 : 0) |
-					((_pulse2LengthCounter.Enable ? 1 : 0) << 2) |
-					((_triangle.LengthCounter.Enable ? 1 : 0) << 3) |
-					((_noise.LengthCounter.Enable ? 1 : 0) << 4) |
-					((_dmcControlEnable ? 1 : 0) << 5)
+					(_frameCounterMode << 7) |
+					((_frameCounterInterruptInhibit ? 1 : 0) << 6)
 				);
 		}
 		return 0;
@@ -322,62 +320,62 @@ internal sealed class Apu
 		switch (address)
 		{
 			case 0x4000:
-				_pulse1Sequencer.DutyCycle = (byte)((value >> 6) & 0b11);
-				_pulse1LengthCounter.Halt = ((value >> 5) & 1) != 0;
+				_pulse1.DutyCycle = (byte)((value >> 6) & 0b11);
+				_pulse1.LengthCounter.Halt = ((value >> 5) & 1) != 0;
 
-				_pulse1Envelope.LoopFlag = _pulse1LengthCounter.Halt;
-				_pulse1Envelope.ConstantVolumeFlag = ((value >> 4) & 1) != 0;
-				_pulse1Envelope.VolumeOrDividerReload = value & 0b1111;
+				_pulse1.Envelope.LoopFlag = _pulse1.LengthCounter.Halt;
+				_pulse1.Envelope.ConstantVolumeFlag = ((value >> 4) & 1) != 0;
+				_pulse1.Envelope.VolumeOrDividerReload = value & 0b1111;
 				break;
 			case 0x4001:
-				_pulse1Sweep.Enable = ((value >> 7) & 1) != 0;
-				_pulse1Sweep.DividerReload = (value >> 4) & 0b111;
-				_pulse1Sweep.NegateFlag = ((value >> 3) & 1) != 0;
-				_pulse1Sweep.ShiftCount = value & 0b111;
-				_pulse1Sweep.ReloadFlag = true;
+				_pulse1.Sweep.Enable = ((value >> 7) & 1) != 0;
+				_pulse1.Sweep.DividerReload = (value >> 4) & 0b111;
+				_pulse1.Sweep.NegateFlag = ((value >> 3) & 1) != 0;
+				_pulse1.Sweep.ShiftCount = value & 0b111;
+				_pulse1.Sweep.ReloadFlag = true;
 				break;
 			case 0x4002:
-				_pulse1Sequencer.TimerReload &= 0xFF00;
-				_pulse1Sequencer.TimerReload |= value;
+				_pulse1.TimerReload &= 0xFF00;
+				_pulse1.TimerReload |= value;
 				break;
 			case 0x4003:
-				_pulse1Sequencer.TimerReload &= 0x00FF;
-				_pulse1Sequencer.TimerReload |= (value & 0b111) << 8;
+				_pulse1.TimerReload &= 0x00FF;
+				_pulse1.TimerReload |= (value & 0b111) << 8;
 
-				if (_pulse1LengthCounter.Enable)
-					_pulse1LengthCounter.Value = _lengthCounterLookupTable[(value >> 3) & 0b11111];
+				if (_pulse1.LengthCounter.Enable)
+					_pulse1.LengthCounter.Value = _lengthCounterLookupTable[(value >> 3) & 0b11111];
 
-				_pulse1Envelope.StartFlag = true;
-				_pulse1Sequencer.Timer = _pulse1Sequencer.TimerReload;
+				_pulse1.Envelope.StartFlag = true;
+				_pulse1.Timer = _pulse1.TimerReload;
 				break;
 			case 0x4004:
-				_pulse2Sequencer.DutyCycle = (byte)((value >> 6) & 0b11);
-				_pulse2LengthCounter.Halt = ((value >> 5) & 1) != 0;
+				_pulse2.DutyCycle = (byte)((value >> 6) & 0b11);
+				_pulse2.LengthCounter.Halt = ((value >> 5) & 1) != 0;
 
-				_pulse2Envelope.LoopFlag = _pulse2LengthCounter.Halt;
-				_pulse2Envelope.ConstantVolumeFlag = ((value >> 4) & 1) != 0;
-				_pulse2Envelope.VolumeOrDividerReload = value & 0b1111;
+				_pulse2.Envelope.LoopFlag = _pulse2.LengthCounter.Halt;
+				_pulse2.Envelope.ConstantVolumeFlag = ((value >> 4) & 1) != 0;
+				_pulse2.Envelope.VolumeOrDividerReload = value & 0b1111;
 				break;
 			case 0x4005:
-				_pulse2Sweep.Enable = ((value >> 7) & 1) != 0;
-				_pulse2Sweep.DividerReload = (value >> 4) & 0b111;
-				_pulse2Sweep.NegateFlag = ((value >> 3) & 1) != 0;
-				_pulse2Sweep.ShiftCount = value & 0b111;
-				_pulse2Sweep.ReloadFlag = true;
+				_pulse2.Sweep.Enable = ((value >> 7) & 1) != 0;
+				_pulse2.Sweep.DividerReload = (value >> 4) & 0b111;
+				_pulse2.Sweep.NegateFlag = ((value >> 3) & 1) != 0;
+				_pulse2.Sweep.ShiftCount = value & 0b111;
+				_pulse2.Sweep.ReloadFlag = true;
 				break;
 			case 0x4006:
-				_pulse2Sequencer.TimerReload &= 0xFF00;
-				_pulse2Sequencer.TimerReload |= value;
+				_pulse2.TimerReload &= 0xFF00;
+				_pulse2.TimerReload |= value;
 				break;
 			case 0x4007:
-				_pulse2Sequencer.TimerReload &= 0x00FF;
-				_pulse2Sequencer.TimerReload |= (value & 0b111) << 8;
+				_pulse2.TimerReload &= 0x00FF;
+				_pulse2.TimerReload |= (value & 0b111) << 8;
 
-				if (_pulse2LengthCounter.Enable)
-					_pulse2LengthCounter.Value = _lengthCounterLookupTable[(value >> 3) & 0b11111];
+				if (_pulse2.LengthCounter.Enable)
+					_pulse2.LengthCounter.Value = _lengthCounterLookupTable[(value >> 3) & 0b11111];
 
-				_pulse2Envelope.StartFlag = true;
-				_pulse2Sequencer.Timer = _pulse2Sequencer.TimerReload;
+				_pulse2.Envelope.StartFlag = true;
+				_pulse2.Timer = _pulse2.TimerReload;
 				break;
 			case 0x4008:
 				_triangle.LinearCounterControl = ((value >> 7) & 1) != 0;
@@ -398,7 +396,7 @@ internal sealed class Apu
 				break;
 			case 0x400C:
 				_noise.LengthCounter.Halt = ((value >> 5) & 1) != 0;
-				_noise.Envelope.LoopFlag = _pulse2LengthCounter.Halt;
+				_noise.Envelope.LoopFlag = _pulse2.LengthCounter.Halt;
 				_noise.Envelope.ConstantVolumeFlag = ((value >> 4) & 1) != 0;
 				_noise.Envelope.VolumeOrDividerReload = value & 0b1111;
 				break;
@@ -432,26 +430,32 @@ internal sealed class Apu
 				_noise.Envelope.StartFlag = true;
 				break;
 			case 0x4015:
-				_pulse1LengthCounter.Enable = (value & 1) != 0;
-				_pulse2LengthCounter.Enable = ((value >> 1) & 1) != 0;
+				_pulse1.LengthCounter.Enable = (value & 1) != 0;
+				_pulse2.LengthCounter.Enable = ((value >> 1) & 1) != 0;
 				_triangle.LengthCounter.Enable = ((value >> 2) & 1) != 0;
 				_noise.LengthCounter.Enable = ((value >> 3) & 1) != 0;
-				_dmcControlEnable = ((value >> 4) & 1) != 0;
 
-				if (!_pulse1LengthCounter.Enable)
-					_pulse1LengthCounter.Value = 0;
+				if (!_pulse1.LengthCounter.Enable)
+					_pulse1.LengthCounter.Value = 0;
 
-				if (!_pulse2LengthCounter.Enable)
-					_pulse2LengthCounter.Value = 0;
+				if (!_pulse2.LengthCounter.Enable)
+					_pulse2.LengthCounter.Value = 0;
+
+				if (!_triangle.LengthCounter.Enable)
+					_triangle.LengthCounter.Value = 0;
+
+				if (!_noise.LengthCounter.Enable)
+					_noise.LengthCounter.Value = 0;
 				break;
 			case 0x4017:
 				_frameCounterMode = (value >> 7) & 1;
 				_frameCounterInterruptInhibit = ((value >> 6) & 1) != 0;
 
 				if (_frameCounterInterruptInhibit)
-					_frameCounterInterrupt = false;
+					RequestFrameInterrupt = false;
 
-				_frameCounterResetCounter = 4;
+				_frameCounterResetCounter = _cycles % 2 == 1 ? 3 : 4;
+				_frameCounterClockOn0InMode5 = true;
 				break;
 		}
 	}
@@ -462,8 +466,8 @@ internal sealed class Apu
 
 		if (_cycles % 2 == 1)
 		{
-			_pulse1Sequencer.Step();
-			_pulse2Sequencer.Step();
+			_pulse1.StepSequencer();
+			_pulse2.StepSequencer();
 		}
 
 		_noise.Step();
@@ -495,10 +499,6 @@ internal sealed class Apu
 	{
 		switch (_frameCounter)
 		{
-			case 0:
-				if (!_frameCounterInterruptInhibit)
-					_frameCounterInterrupt = true;
-				break;
 			case (3728 * 2) + 1:
 				DoQuarterFrame();
 				break;
@@ -511,19 +511,22 @@ internal sealed class Apu
 				break;
 			case (14914 * 2):
 				if (!_frameCounterInterruptInhibit)
-					_frameCounterInterrupt = true;
+					RequestFrameInterrupt = true;
 				break;
 			case (14914 * 2) + 1:
 				if (!_frameCounterInterruptInhibit)
-					_frameCounterInterrupt = true;
+					RequestFrameInterrupt = true;
 				DoQuarterFrame();
 				DoHalfFrame();
+				break;
+			case 14915 * 2:
+				if (!_frameCounterInterruptInhibit)
+					RequestFrameInterrupt = true;
+				_frameCounter = 0;
 				break;
 		}
 
 		_frameCounter++;
-		if (_frameCounter == 14915 * 2)
-			_frameCounter = 0;
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -531,6 +534,11 @@ internal sealed class Apu
 	{
 		switch (_frameCounter)
 		{
+			case 0 when _frameCounterClockOn0InMode5:
+				DoQuarterFrame();
+				DoHalfFrame();
+				_frameCounterClockOn0InMode5 = false;
+				break;
 			case (3728 * 2) + 1:
 				DoQuarterFrame();
 				break;
@@ -569,8 +577,8 @@ internal sealed class Apu
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	private void DoEnvelopes()
 	{
-		_pulse1Envelope.Step();
-		_pulse2Envelope.Step();
+		_pulse1.Envelope.Step();
+		_pulse2.Envelope.Step();
 		_noise.Envelope.Step();
 	}
 
@@ -583,8 +591,8 @@ internal sealed class Apu
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	private void DoLengthCounters()
 	{
-		_pulse1LengthCounter.Step();
-		_pulse2LengthCounter.Step();
+		_pulse1.LengthCounter.Step();
+		_pulse2.LengthCounter.Step();
 		_triangle.LengthCounter.Step();
 		_noise.LengthCounter.Step();
 	}
@@ -592,15 +600,15 @@ internal sealed class Apu
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	private void DoSweep()
 	{
-		_pulse1Sweep.Step();
-		_pulse2Sweep.Step();
+		_pulse1.Sweep.Step();
+		_pulse2.Sweep.Step();
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	private double GetPulse1()
 	{
-		var pulse1freq = (Emu.CyclesPerSecond / 12.0) / (16.0 * (_pulse1Sequencer.TimerReload + 1));
-		var pulse1dutyCycle = _pulse1Sequencer.DutyCycle switch
+		var pulse1freq = (Emu.CyclesPerSecond / 12.0) / (16.0 * (_pulse1.TimerReload + 1));
+		var pulse1dutyCycle = _pulse1.DutyCycle switch
 		{
 			0 => 0.125,
 			1 => 0.25,
@@ -609,17 +617,17 @@ internal sealed class Apu
 			_ => 0.0
 		};
 
-		if (_pulse1LengthCounter.Value == 0 || _pulse1Sweep.MuteChannel)
+		if (_pulse1.LengthCounter.Value == 0 || _pulse1.Sweep.MuteChannel)
 			return 0;
 
-		return _pulse1Generator.GenerateSample(pulse1freq, pulse1dutyCycle) * _pulse1Envelope.Volume;
+		return _pulse1.GenerateSample(pulse1freq, pulse1dutyCycle) * _pulse1.Envelope.Volume;
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	private double GetPulse2()
 	{
-		var pulse2freq = Emu.CyclesPerSecond / 12.0 / (16.0 * (_pulse2Sequencer.TimerReload + 1));
-		var pulse2dutyCycle = _pulse2Sequencer.DutyCycle switch
+		var pulse2freq = Emu.CyclesPerSecond / 12.0 / (16.0 * (_pulse2.TimerReload + 1));
+		var pulse2dutyCycle = _pulse2.DutyCycle switch
 		{
 			0 => 0.125,
 			1 => 0.25,
@@ -628,10 +636,10 @@ internal sealed class Apu
 			_ => 0.0
 		};
 
-		if (_pulse2LengthCounter.Value == 0 || _pulse2Sweep.MuteChannel)
+		if (_pulse2.LengthCounter.Value == 0 || _pulse2.Sweep.MuteChannel)
 			return 0;
 
-		return _pulse2Generator.GenerateSample(pulse2freq, pulse2dutyCycle) * _pulse2Envelope.Volume;
+		return _pulse2.GenerateSample(pulse2freq, pulse2dutyCycle) * _pulse2.Envelope.Volume;
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]

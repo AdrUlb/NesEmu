@@ -1,5 +1,4 @@
 ﻿using System.Diagnostics;
-using System.Net.Http.Headers;
 
 namespace NesEmu.Mappers;
 
@@ -44,7 +43,7 @@ internal sealed class Mapper1 : Mapper
 	{
 		if (chrRomBanks == 0)
 		{
-			chrRomBanks = 10;
+			chrRomBanks = 1;
 			_chrRam = true;
 		}
 
@@ -140,6 +139,9 @@ internal sealed class Mapper1 : Mapper
 					case PrgRomBankMode.FixLastSwitchFirst:
 						_prgBank0 = (_shiftRegisterValue & 0b1111) % _prgRomBanks;
 						break;
+					case PrgRomBankMode.FixFirstSwitchLast:
+						_prgBank1 = (_shiftRegisterValue & 0b1111) % _prgRomBanks;
+						break;
 					default:
 						Console.WriteLine($"TODO: Mapper1: PRG=0x{_shiftRegisterValue:X2},MODE:{_prgRomBankMode}");
 						break;
@@ -175,7 +177,8 @@ internal sealed class Mapper1 : Mapper
 
 		switch (address)
 		{
-			case < PpuBus.Nametable0Address when _chrRam: _chrRom[address] = value; break;
+			case >= 0x0000 and <= 0x0FFF when _chrRam: _chrRom[address + (_chrBank0 * 0x1000)] = value; break;
+			case >= 0x1000 and <= 0x1FFF when _chrRam: _chrRom[address - 0x1000 + (_chrBank1 * 0x1000)] = value; break;
 			case >= PpuBus.Nametable0Address and < PpuBus.Nametable1Address: ppu.Vram[address - PpuBus.Nametable0Address + Nametable0Offset] = value; break;
 			case >= PpuBus.Nametable1Address and < PpuBus.Nametable2Address: ppu.Vram[address - PpuBus.Nametable1Address + Nametable1Offset] = value; break;
 			case >= PpuBus.Nametable2Address and < PpuBus.Nametable3Address: ppu.Vram[address - PpuBus.Nametable2Address + Nametable2Offset] = value; break;
