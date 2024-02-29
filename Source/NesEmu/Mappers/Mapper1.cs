@@ -114,6 +114,25 @@ internal sealed class Mapper1 : Mapper
 					_prgRomBankMode = (PrgRomBankMode)((_shiftRegisterValue >> 2) & 0b11);
 					_chrRomBankMode = (ChrRomBankMode)((_shiftRegisterValue >> 4) & 1);
 
+					switch (_prgRomBankMode)
+					{
+						case PrgRomBankMode.FixLastSwitchFirst:
+							_prgBank0 = 0;
+							_prgBank1 = _prgRomBanks - 1;
+							break;
+						case PrgRomBankMode.FixFirstSwitchLast:
+							_prgBank0 = 0;
+							_prgBank1 = 1;
+							break;
+						case PrgRomBankMode.Switch32k or PrgRomBankMode.Switch32kAlt:
+							_prgBank0 = 0;
+							_prgBank1 = 1;
+							break;
+						default:
+							Console.WriteLine($"TODO: Mapper1: PRG=0x{_shiftRegisterValue:X2},MODE:{_prgRomBankMode}");
+							break;
+					}
+
 					SetMirroringMode(mirroringMode);
 					break;
 				}
@@ -130,6 +149,9 @@ internal sealed class Mapper1 : Mapper
 				_chrBank0 %= _chrRomBanks * 2;
 				break;
 			case >= 0xC000 and <= 0xDFFF: // CHR bank 1
+				if (_chrRomBankMode == ChrRomBankMode.Switch8k)
+					break;
+
 				_chrBank1 = (_shiftRegisterValue & 0b11111);
 				_chrBank1 %= _chrRomBanks * 2;
 				break;
@@ -141,6 +163,10 @@ internal sealed class Mapper1 : Mapper
 						break;
 					case PrgRomBankMode.FixFirstSwitchLast:
 						_prgBank1 = (_shiftRegisterValue & 0b1111) % _prgRomBanks;
+						break;
+					case PrgRomBankMode.Switch32k or PrgRomBankMode.Switch32kAlt:
+						_prgBank0 = (_shiftRegisterValue & 0b1110) % _prgRomBanks;
+						_prgBank1 = (_prgBank0 + 1) % _prgRomBanks;
 						break;
 					default:
 						Console.WriteLine($"TODO: Mapper1: PRG=0x{_shiftRegisterValue:X2},MODE:{_prgRomBankMode}");

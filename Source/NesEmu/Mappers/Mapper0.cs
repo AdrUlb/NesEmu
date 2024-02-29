@@ -52,12 +52,7 @@ internal sealed class Mapper0 : Mapper
 
 	public override void CpuWriteByte(ushort address, byte value)
 	{
-		switch (address)
-		{
-			case >= 0x0000 and <= 0x1FFF when _chrRam:
-				_chrRom[address] = value;
-				break;
-		}
+
 	}
 
 	public override byte PpuReadByte(Ppu ppu, ushort address)
