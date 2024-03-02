@@ -61,6 +61,8 @@ internal sealed class Ppu
 	private int _nextPixelIndex = 0;
 
 	private bool _statusSprite0Hit = false;
+	private bool _statusSpriteOverflow = false;
+
 	private bool _wasSprite0HitThisFrame = false;
 
 	private readonly Color[] _palette = new Color[64];
@@ -93,7 +95,7 @@ internal sealed class Ppu
 		{
 			_ctrlEnableVblankNmi = ((value >> 7) & 1) != 0;
 			_ctrlMasterSlaveSelect = ((value >> 6) & 1) != 0;
-			_ctrlSpriteSize = ((value >> 7) & 5) != 0;
+			_ctrlSpriteSize = ((value >> 5) & 1) != 0;
 			_ctrlBackgroundPatternTable = (byte)((value >> 4) & 1);
 			_ctrlSpritePatternTable = ((value >> 3) & 1) != 0;
 			_ctrlAddrIncrMode = ((value >> 2) & 1) != 0;
@@ -106,7 +108,8 @@ internal sealed class Ppu
 		get => (byte)
 		(
 			((StatusVblank ? 1 : 0) << 7) |
-			((_statusSprite0Hit ? 1 : 0) << 6)
+			((_statusSprite0Hit ? 1 : 0) << 6) |
+			((_statusSpriteOverflow ? 1 : 0) << 5)
 		);
 	}
 
@@ -292,10 +295,12 @@ internal sealed class Ppu
 
 								_spriteEvalReadBuffer = _oam[(4 * (_spriteEvalN % 64)) + _spriteEvalM]; // Read byte M of sprite N
 
+								var spriteHeight = _ctrlSpriteSize ? 16 : 8;
+
 								if (_spriteEvalM == 0) // If this is the first byte of the sprite
 								{
 									// Check if the sprite is part of this scanline
-									var spriteInRange = _scanline >= _spriteEvalReadBuffer && _scanline < _spriteEvalReadBuffer + 8;
+									var spriteInRange = _scanline >= _spriteEvalReadBuffer && _scanline < _spriteEvalReadBuffer + spriteHeight;
 									if (spriteInRange)
 									{
 										_spriteEvalM++; // Next byte in the sprite
@@ -305,7 +310,10 @@ internal sealed class Ppu
 											_spriteScanlineHasSprite0 = true;
 
 										if (_spriteEvalN >= 64)
+										{
+											_statusSpriteOverflow = true;
 											_spriteEvalWrite = false;
+										}
 									}
 									else
 									{
@@ -324,7 +332,7 @@ internal sealed class Ppu
 								if (_spriteEvalM >= 4) // Last byte of sprite was read
 								{
 									// Read first byte of next sprite next
-									_spriteEvalM = 0;
+									_spriteEvalM -= 4;
 									_spriteEvalN++;
 									_spriteEvalCount++;
 								}
@@ -343,6 +351,9 @@ internal sealed class Ppu
 						{
 							Array.Fill(_spritePixels, Color.Transparent);
 							Array.Fill(_sprite0Mask, false);
+
+							var spriteHeight = _ctrlSpriteSize ? 16 : 8;
+
 							for (var screenX = 0; screenX < ScreenWidth; screenX++)
 							{
 								_spritePixels[screenX] = Color.Transparent;
@@ -357,34 +368,46 @@ internal sealed class Ppu
 										if (yPos == 0xFF)
 											continue;
 
+										// The y offset within the tile
 										var y = _scanline - yPos;
 
 										var tileId = _secondaryOam[off + 1];
 										var attrib = _secondaryOam[off + 2];
 										var xPos = _secondaryOam[off + 3];
 
+										var flipX = (attrib & (1 << 6)) != 0;
+										var flipY = (attrib & (1 << 7)) != 0;
+
 										var x = screenX - xPos;
 
 										if (x is < 0 or >= 8)
 											continue;
 
+										x = flipX ? x : 7 - x;
+										y  = flipY ? spriteHeight - 1 - y : y;
+
 										var usePatternTable = patternTable;
+
+										if (_ctrlSpriteSize) // 8x16
+										{
+											usePatternTable = (ushort)((tileId & 1) == 0 ? 0x0000 : 0x1000);
+											tileId = (byte)(tileId & ~1);
+											if (y >= 8)
+											{
+												tileId++;
+												y -= 8;
+											}
+										}
 
 										var paletteIndex = attrib & 0b11;
 										var tileOff = (tileId * 16) + usePatternTable;
 
 										var paletteOffset = PpuBus.PaletteRamAddress + 0x11 + (paletteIndex * 4);
 
-										var flipX = (attrib & (1 << 6)) != 0;
-										var flipY = (attrib & (1 << 7)) != 0;
+										var msb = Bus.ReadByte((ushort)(tileOff + y + 8));
+										var lsb = Bus.ReadByte((ushort)(tileOff + y));
 
-										var flippedX = flipX ? x : 7 - x;
-										var flippedY = flipY ? 7 - y : y;
-
-										var msb = Bus.ReadByte((ushort)(tileOff + flippedY + 8));
-										var lsb = Bus.ReadByte((ushort)(tileOff + flippedY));
-
-										var colorIndex = (((msb >> flippedX) & 1) << 1) | ((lsb >> flippedX) & 1);
+										var colorIndex = (((msb >> x) & 1) << 1) | ((lsb >> x) & 1);
 										var color = colorIndex switch
 										{
 											0 => Color.Transparent,
@@ -519,6 +542,7 @@ internal sealed class Ppu
 
 		if (_scanline == 261 && _cycle == 1)
 		{
+			_statusSpriteOverflow = false;
 			_statusSprite0Hit = false;
 			StatusVblank = false;
 		}

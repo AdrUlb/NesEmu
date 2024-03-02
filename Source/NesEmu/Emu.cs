@@ -31,7 +31,7 @@ internal sealed class Emu : IDisposable
 
 		_audioClient = new(AudioFormat.IeeeFloat, 44100, 32, 1);
 
-		using (var fs = File.OpenRead(@"C:\Stuff\Roms\NES\mario.nes"))
+		using (var fs = File.OpenRead(@"C:\Stuff\Roms\NES\tetris.nes"))
 		{
 			var cart = new Cartridge(Ppu, fs);
 			Cpu.Bus.Cartridge = cart;
