@@ -40,6 +40,12 @@ internal sealed class Ppu
 	private readonly bool[] _sprite0Mask = new bool[ScreenWidth];
 	private readonly bool[] _spritePriorities = new bool[ScreenWidth];
 	private bool _spriteScanlineHasSprite0 = false;
+	private byte _spriteEvalReadBuffer = 0;
+	private int _spriteEvalN = 0;
+	private int _spriteEvalM = 0;
+	private bool _spriteEvalWrite = false;
+	private int _spriteEvalWriteOffset = 0;
+	private int _spriteEvalCount = 0;
 
 	private bool _ctrlEnableVblankNmi = false;
 	private bool _ctrlMasterSlaveSelect = false;
@@ -262,101 +268,144 @@ internal sealed class Ppu
 
 		if (_scanline is >= 0 and <= 239)
 		{
-			if (_cycle == 65) // TOOD: proper sprite evaluation, cycs 65-256
+			if (_scanline != 239) // Sprite evaluation does not happen on the prerender scanline
 			{
-				Array.Fill<byte>(_secondaryOam, 0xFF);
-
-				_spriteScanlineHasSprite0 = false;
-
-				var spriteCount = 0;
-				for (var i = 0; i < 64; i++)
+				switch (_cycle)
 				{
-					var off = i * 4;
-					var yPos = _oam[off + 0];
-
-					var y = _scanline - yPos;
-
-					if (y < 0 || y >= 8)
-						continue;
-						
-					_secondaryOam[(spriteCount * 4) + 0] = _oam[off + 0];
-					_secondaryOam[(spriteCount * 4) + 1] = _oam[off + 1];
-					_secondaryOam[(spriteCount * 4) + 2] = _oam[off + 2];
-					_secondaryOam[(spriteCount * 4) + 3] = _oam[off + 3];
-					spriteCount++;
-					if (i == 0)
-						_spriteScanlineHasSprite0 = true;
-
-					if (spriteCount == 8)
+					case 0:
+						_spriteEvalN = 0;
+						_spriteEvalM = 0;
+						_spriteEvalWriteOffset = 0;
+						_spriteScanlineHasSprite0 = false;
+						_spriteEvalCount = 0;
 						break;
-				}
-			}
-
-			if (_cycle == 257) // TOOD: proper sprite fetching, cycs 257-320
-			{
-
-				Array.Fill(_spritePixels, Color.Transparent);
-				Array.Fill(_sprite0Mask, false);
-				for (var screenX = 0; screenX < ScreenWidth; screenX++)
-				{
-					_spritePixels[screenX] = Color.Transparent;
-					var patternTable = _ctrlSpritePatternTable ? PpuBus.PatternTable1Address : PpuBus.PatternTable0Address;
-					if (_maskShowSprites)
-					{
-						for (var i = 0; i < 8; i++)
+					case >= 1 and <= 256:
 						{
-							var off = i * 4;
-							var yPos = _secondaryOam[off + 0];
-
-							if (yPos == 0xFF)
-								continue;
-
-							var y = _scanline - yPos;
-
-							var tileId = _secondaryOam[off + 1];
-							var attrib = _secondaryOam[off + 2];
-							var xPos = _secondaryOam[off + 3];
-
-							var x = screenX - xPos;
-
-							if (x is < 0 or >= 8)
-								continue;
-
-							var usePatternTable = patternTable;
-
-							var paletteIndex = attrib & 0b11;
-							var tileOff = (tileId * 16) + usePatternTable;
-
-							var paletteOffset = PpuBus.PaletteRamAddress + 0x11 + (paletteIndex * 4);
-
-							var flipX = (attrib & (1 << 6)) != 0;
-							var flipY = (attrib & (1 << 7)) != 0;
-
-							var flippedX = flipX ? x : 7 - x;
-							var flippedY = flipY ? 7 - y : y;
-
-							var msb = Bus.ReadByte((ushort)(tileOff + flippedY + 8));
-							var lsb = Bus.ReadByte((ushort)(tileOff + flippedY));
-
-							var colorIndex = (((msb >> flippedX) & 1) << 1) | ((lsb >> flippedX) & 1);
-							var color = colorIndex switch
+							if (_cycle % 2 == 1) // On odd cycles, data is read from (primary) OAM
 							{
-								0 => Color.Transparent,
-								1 => _palette[Bus.ReadByte((ushort)(paletteOffset + 0))],
-								2 => _palette[Bus.ReadByte((ushort)(paletteOffset + 1))],
-								3 => _palette[Bus.ReadByte((ushort)(paletteOffset + 2))],
-								_ => throw new UnreachableException()
-							};
+								if (_cycle <= 64)
+								{
+									_spriteEvalReadBuffer = 0xFF;
+									_spriteEvalWrite = true;
+									break;
+								}
 
-							if (color == Color.Transparent)
-								continue;
+								_spriteEvalReadBuffer = _oam[(4 * (_spriteEvalN % 64)) + _spriteEvalM]; // Read byte M of sprite N
 
-							_spritePixels[screenX] = color;
-							_sprite0Mask[screenX] = i == 0 && _spriteScanlineHasSprite0;
-							_spritePriorities[screenX] = ((attrib >> 5) & 1) != 0;
+								if (_spriteEvalM == 0) // If this is the first byte of the sprite
+								{
+									// Check if the sprite is part of this scanline
+									var spriteInRange = _scanline >= _spriteEvalReadBuffer && _scanline < _spriteEvalReadBuffer + 8;
+									if (spriteInRange)
+									{
+										_spriteEvalM++; // Next byte in the sprite
+										_spriteEvalWrite = true; // Write this byte
+
+										if (_spriteEvalN == 0)
+											_spriteScanlineHasSprite0 = true;
+
+										if (_spriteEvalN >= 64)
+											_spriteEvalWrite = false;
+									}
+									else
+									{
+										_spriteEvalN++; // Next sprite
+										if (_spriteEvalN >= 64) // Apparently a hardware bug causes this to happen?
+											_spriteEvalM++;
+										_spriteEvalWrite = false; // Do not write read byte
+									}
+								}
+								else
+								{
+									_spriteEvalM++; // Next byte
+									_spriteEvalWrite = _spriteEvalN < 64; // Write read byte
+								}
+
+								if (_spriteEvalM >= 4) // Last byte of sprite was read
+								{
+									// Read first byte of next sprite next
+									_spriteEvalM = 0;
+									_spriteEvalN++;
+									_spriteEvalCount++;
+								}
+							}
+							else // On even cycles, data is written to secondary OAM (unless secondary OAM is full, in which case it will read the value in secondary OAM instead)
+							{
+								if (_spriteEvalWrite && _spriteEvalCount < 8)
+									_secondaryOam[_spriteEvalWriteOffset++] = _spriteEvalReadBuffer;
+
+								if (_spriteEvalWriteOffset >= _secondaryOam.Length)
+									_spriteEvalWriteOffset = 0;
+							}
 							break;
 						}
-					}
+					case 257: // TOOD: proper sprite fetching, cycs 257-320
+						{
+							Array.Fill(_spritePixels, Color.Transparent);
+							Array.Fill(_sprite0Mask, false);
+							for (var screenX = 0; screenX < ScreenWidth; screenX++)
+							{
+								_spritePixels[screenX] = Color.Transparent;
+								var patternTable = _ctrlSpritePatternTable ? PpuBus.PatternTable1Address : PpuBus.PatternTable0Address;
+								if (_maskShowSprites)
+								{
+									for (var i = 0; i < 8; i++)
+									{
+										var off = i * 4;
+										var yPos = _secondaryOam[off + 0];
+
+										if (yPos == 0xFF)
+											continue;
+
+										var y = _scanline - yPos;
+
+										var tileId = _secondaryOam[off + 1];
+										var attrib = _secondaryOam[off + 2];
+										var xPos = _secondaryOam[off + 3];
+
+										var x = screenX - xPos;
+
+										if (x is < 0 or >= 8)
+											continue;
+
+										var usePatternTable = patternTable;
+
+										var paletteIndex = attrib & 0b11;
+										var tileOff = (tileId * 16) + usePatternTable;
+
+										var paletteOffset = PpuBus.PaletteRamAddress + 0x11 + (paletteIndex * 4);
+
+										var flipX = (attrib & (1 << 6)) != 0;
+										var flipY = (attrib & (1 << 7)) != 0;
+
+										var flippedX = flipX ? x : 7 - x;
+										var flippedY = flipY ? 7 - y : y;
+
+										var msb = Bus.ReadByte((ushort)(tileOff + flippedY + 8));
+										var lsb = Bus.ReadByte((ushort)(tileOff + flippedY));
+
+										var colorIndex = (((msb >> flippedX) & 1) << 1) | ((lsb >> flippedX) & 1);
+										var color = colorIndex switch
+										{
+											0 => Color.Transparent,
+											1 => _palette[Bus.ReadByte((ushort)(paletteOffset + 0))],
+											2 => _palette[Bus.ReadByte((ushort)(paletteOffset + 1))],
+											3 => _palette[Bus.ReadByte((ushort)(paletteOffset + 2))],
+											_ => throw new UnreachableException()
+										};
+
+										if (color == Color.Transparent)
+											continue;
+
+										_spritePixels[screenX] = color;
+										_sprite0Mask[screenX] = i == 0 && _spriteScanlineHasSprite0;
+										_spritePriorities[screenX] = ((attrib >> 5) & 1) != 0;
+										break;
+									}
+								}
+							}
+							break;
+						}
 				}
 			}
 		}

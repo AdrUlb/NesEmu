@@ -11,9 +11,8 @@ internal sealed class Emu : IDisposable
 
 	public const int CyclesPerSecond = 21477272;
 	public const double FramesPerSecond = CyclesPerSecond / 4.0 / 262.5 / 341.0;
-	private const double MillisPerFrame = 1000.0 / FramesPerSecond;
 	public static readonly double TicksPerFrame = Stopwatch.Frequency / FramesPerSecond;
-	private static int _cyclesPerAudioSample = CyclesPerSecond / 44100;
+	private static readonly int _cyclesPerAudioSample = CyclesPerSecond / 44100;
 
 	public event EventHandler? Vblank;
 	public readonly Cpu Cpu;
@@ -32,7 +31,7 @@ internal sealed class Emu : IDisposable
 
 		_audioClient = new(AudioFormat.IeeeFloat, 44100, 32, 1);
 
-		using (var fs = File.OpenRead(@"C:\Stuff\Roms\NES\tetris.nes"))
+		using (var fs = File.OpenRead(@"C:\Stuff\Roms\NES\mario.nes"))
 		{
 			var cart = new Cartridge(Ppu, fs);
 			Cpu.Bus.Cartridge = cart;
@@ -118,7 +117,11 @@ internal sealed class Emu : IDisposable
 		SpinWait.SpinUntil(() => !_emuThread.IsAlive);
 	}
 
-	public void Dispose() => Dispose(true);
+	public void Dispose()
+	{
+		GC.SuppressFinalize(this);
+		Dispose(true);
+	}
 
 	private void Dispose(bool disposing)
 	{

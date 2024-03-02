@@ -5,7 +5,7 @@ internal sealed class Mapper0 : Mapper
 	private readonly byte[] _prgRom;
 	private readonly byte[] _chrRom;
 
-	private bool _chrRam = false;
+	private readonly bool _chrRam = false;
 
 	public Mapper0(int prgRomBanks, int chrRomBanks, MirroringMode mirroringMode, Stream data)
 	{
@@ -25,7 +25,6 @@ internal sealed class Mapper0 : Mapper
 			throw new NotImplementedException();
 
 		_prgRom = new byte[prgRomSize];
-
 		_chrRom = new byte[chrRomSize];
 
 		data.ReadExactly(_prgRom);
