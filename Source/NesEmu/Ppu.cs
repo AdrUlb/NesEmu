@@ -55,6 +55,8 @@ internal sealed class Ppu
 	private bool _ctrlAddrIncrMode = false;
 	private byte _ctrlBaseNametableAddr;
 
+	private bool _maskShowBackgroundInLeftmost8Pixels;
+	private bool _maskShowSpritesInLeftmost8Pixels;
 	private bool _maskShowBackground = true;
 	private bool _maskShowSprites = true;
 
@@ -129,6 +131,8 @@ internal sealed class Ppu
 			var ii = i * 3;
 			_palette[i] = Color.FromArgb(pal[ii + 0], pal[ii + 1], pal[ii + 2]);
 		}
+
+		Array.Fill(Framebuffer, Color.White);
 	}
 
 	public byte CpuReadByte(int num)
@@ -196,6 +200,8 @@ internal sealed class Ppu
 				_regT |= (ushort)((value & 0b11) << 10);
 				break;
 			case 0x2001: // PPUMASK - write only
+				_maskShowBackgroundInLeftmost8Pixels = ((value >> 1) & 1) != 0;
+				_maskShowSpritesInLeftmost8Pixels = ((value >> 2) & 1) != 0;
 				_maskShowBackground = ((value >> 3) & 1) != 0;
 				_maskShowSprites = ((value >> 4) & 1) != 0;
 				break;
@@ -638,7 +644,7 @@ internal sealed class Ppu
 
 		var screenX = _cycle - 1;
 
-		var spriteColor = _spritePixels[screenX];
+		var spriteColor = _maskShowSprites && (_maskShowSpritesInLeftmost8Pixels || screenX >= 8) ? _spritePixels[screenX] : Color.Transparent;
 		var sprite0 = _sprite0Mask[screenX];
 
 		var pal = (_bgPalette >> (((8 - _regX) > screenX % 8) ? 2 : 0)) & 0b11;
@@ -647,7 +653,7 @@ internal sealed class Ppu
 		var bgColorIndex = (((_bgPatternHighs >> (15 - _regX)) & 1) << 1) | ((_bgPatternLows >> (15 - _regX)) & 1);
 
 		// If the background is disabled or rendering color index 0
-		if (!_maskShowBackground || bgColorIndex == 0)
+		if (!_maskShowBackground || (!_maskShowBackgroundInLeftmost8Pixels && screenX < 8) || bgColorIndex == 0)
 		{
 			if (spriteColor == Color.Transparent) // No sprite pixel here, render EXT
 				Framebuffer[_nextPixelIndex++] = _palette[Bus.ReadByte(PpuBus.PaletteRamAddress)];

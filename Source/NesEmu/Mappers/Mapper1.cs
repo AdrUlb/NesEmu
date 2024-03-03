@@ -92,7 +92,6 @@ internal sealed class Mapper1 : Mapper
 
 		_shiftRegisterValue |= (byte)((value & 1) << _shiftRegisterCount);
 		_shiftRegisterCount++;
-
 		if (_shiftRegisterCount != 5)
 			return;
 
@@ -131,7 +130,7 @@ internal sealed class Mapper1 : Mapper
 							Console.WriteLine($"TODO: Mapper1: PRG=0x{_shiftRegisterValue:X2},MODE:{_prgRomBankMode}");
 							break;
 					}
-
+					Console.WriteLine($"Mirroring:{mirroringMode},PRG:{_prgRomBankMode},CHR:{_chrRomBankMode}");
 					SetMirroringMode(mirroringMode);
 					break;
 				}
@@ -142,17 +141,23 @@ internal sealed class Mapper1 : Mapper
 					_chrBank1 = _chrBank0 + 1;
 					_chrBank0 %= _chrRomBanks * 2;
 					_chrBank1 %= _chrRomBanks * 2;
+					Console.WriteLine($"CHR0={_chrBank0},CHR1={_chrBank1}");
 					break;
 				}
 				_chrBank0 = _shiftRegisterValue;
 				_chrBank0 %= _chrRomBanks * 2;
+				Console.WriteLine($"CHR0={_chrBank0}");
 				break;
 			case >= 0xC000 and <= 0xDFFF: // CHR bank 1
 				if (_chrRomBankMode == ChrRomBankMode.Switch8k)
+				{
+					Console.WriteLine($"CHR1=IGNORED");
 					break;
+				}
 
 				_chrBank1 = (_shiftRegisterValue & 0b11111);
 				_chrBank1 %= _chrRomBanks * 2;
+				Console.WriteLine($"CHR1={_chrBank1}");
 				break;
 			case >= 0xE000 and <= 0xFFFF: // PRG bank
 				switch (_prgRomBankMode)
@@ -173,6 +178,7 @@ internal sealed class Mapper1 : Mapper
 						Console.WriteLine($"TODO: Mapper1: PRG=0x{_shiftRegisterValue:X2},MODE:{_prgRomBankMode}");
 						break;
 				}
+				Console.WriteLine($"PRG0={_prgBank0},PRG1={_prgBank1}");
 				break;
 		}
 

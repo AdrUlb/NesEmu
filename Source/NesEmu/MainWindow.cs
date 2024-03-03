@@ -46,10 +46,6 @@ internal class MainWindow : Window
 	{
 		_tex = new();
 		_tex.SetSize(256, 240);
-		for (var y = 0; y < _tex.Height; y++)
-			for (var x = 0; x < _tex.Width; x++)
-				_tex[x, y] = Color.Orange;
-
 		_emu.Start();
 	}
 

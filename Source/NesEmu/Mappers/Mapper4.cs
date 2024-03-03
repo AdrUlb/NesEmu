@@ -86,7 +86,9 @@ internal sealed class Mapper4 : Mapper
 	{
 		switch (address)
 		{
-			case >= 0x6000 and <= 0x7FFF: _prgRam[address - 0x6000] = value; break;
+			case >= 0x6000 and <= 0x7FFF:
+				_prgRam[address - 0x6000] = value;
+				break;
 			case >= 0x8000 and <= 0x9FFF:
 				if (address % 2 == 0)
 				{

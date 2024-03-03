@@ -368,7 +368,7 @@ internal sealed class Apu(Emu emu)
 	private TriangleChannel _triangle = new();
 	private NoiseChannel _noise = new();
 	private DmcChannel _dmc = new(emu);
-	private readonly LowPassFilter _lowPassFilter = new(0.6);
+	private readonly LowPassFilter _lowPassFilter = new(0.5);
 
 	private int _frameCounter = 0;
 	private int _frameCounterMode = 1;
