@@ -7,6 +7,8 @@ internal abstract class Mapper
 	protected int Nametable2Offset;
 	protected int Nametable3Offset;
 
+	public bool RequestInterrupt;
+
 	protected void SetMirroringMode(MirroringMode mirroringMode)
 	{
 		switch (mirroringMode)
@@ -47,4 +49,15 @@ internal abstract class Mapper
 	public abstract byte PpuReadByte(Ppu ppu, ushort address);
 
 	public abstract void PpuWriteByte(Ppu ppu, ushort address, byte value);
+
+	public virtual void TickScanline() { }
+
+	public bool AcknowledgeInterrupt()
+	{
+		if (!RequestInterrupt)
+			return false;
+
+		//RequestInterrupt = false;
+		return true;
+	}
 }

@@ -383,7 +383,23 @@ internal sealed class Apu(Emu emu)
 	private static readonly int[] _noiseTimerPeriods = [4, 8, 16, 32, 64, 96, 128, 160, 202, 254, 380, 508, 762, 1016, 2034, 4068];
 
 	public bool RequestFrameInterrupt { get; private set; } = false;
-	public bool RequestDmcInterrupt => _dmc.RequestInterrupt;
+
+	public bool AcknowledgeInterrupt()
+	{
+		if (_dmc.RequestInterrupt)
+		{
+			_dmc.RequestInterrupt = false;
+			return true;
+		}
+
+		if (RequestFrameInterrupt)
+		{
+			RequestFrameInterrupt = false;
+			return true;
+		}
+
+		return false;
+	}
 
 	public byte CpuReadByte(ushort address)
 	{
@@ -398,7 +414,7 @@ internal sealed class Apu(Emu emu)
 						((_noise.LengthCounter.Value != 0 ? 1 : 0) << 3) |
 						((_dmc.BytesRemaining > 0 ? 1 : 0) << 4) |
 						((RequestFrameInterrupt ? 1 : 0) << 6) |
-						((RequestDmcInterrupt ? 1 : 0) << 7));
+						((_dmc.RequestInterrupt ? 1 : 0) << 7));
 
 					RequestFrameInterrupt = false;
 

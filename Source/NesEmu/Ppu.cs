@@ -76,7 +76,7 @@ internal sealed class Ppu
 
 	public bool RequestNmi { get; set; } = false;
 
-	public bool RenderingEnabled => _maskShowBackground | _maskShowSprites;
+	public bool RenderingEnabled => _maskShowBackground || _maskShowSprites;
 
 	private byte RegCtrl
 	{
@@ -117,7 +117,7 @@ internal sealed class Ppu
 
 	public Ppu(Emu emu)
 	{
-		Bus = new(this);
+		Bus = new(emu);
 		_emu = emu;
 
 		using var fs = File.OpenRead("palette.pal");
@@ -172,6 +172,9 @@ internal sealed class Ppu
 					}
 					else
 						_regV++;
+
+					if ((_regV & (1 << 12)) != 0)
+						_emu.Cartridge?.TickScanline();
 
 					return ret;
 				}
@@ -231,9 +234,14 @@ internal sealed class Ppu
 					_regT |= value;
 					_regV = _regT;
 					_regW = false;
+					if ((_regV & (1 << 12)) != 0)
+						_emu.Cartridge?.TickScanline();
 				}
 				break;
 			case 0x2007: // PPUDATA
+				if ((_regV & (1 << 12)) != 0)
+					_emu.Cartridge?.TickScanline();
+
 				Bus.WriteByte(_regV, value);
 				if (_ctrlAddrIncrMode)
 				{
@@ -241,6 +249,10 @@ internal sealed class Ppu
 				}
 				else
 					_regV++;
+
+				if ((_regV & (1 << 12)) != 0)
+					_emu.Cartridge?.TickScanline();
+
 				break;
 			case 0x4014: // OAMDMA
 				var address = (ushort)(value << 8);
@@ -440,6 +452,8 @@ internal sealed class Ppu
 
 		if (_scanline is (>= 0 and <= 239) or 261)
 		{
+			if (_cycle == 260 && RenderingEnabled)
+				_emu.Cartridge?.TickScanline();
 			if (_cycle is (>= 1 and <= 256) or (>= 321 and <= 336))
 			{
 				FetchBackground();

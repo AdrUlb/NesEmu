@@ -5,14 +5,12 @@ internal sealed class CpuBus(Emu emu)
 {
 	private readonly byte[] _ram = new byte[0x0800];
 
-	public Cartridge? Cartridge = null;
-
 	public byte ReadByte(ushort address)
 	{
 		// The cartridge can map to any addresses, in the case of a bus conflict 0s "win" over 1s.
 		// As such whatever the cartridge reads is effectively logically ANDed with whatever else is on the bus.
 
-		var value = Cartridge?.CpuReadByte(address) ?? 0xFF;
+		var value = emu.Cartridge?.CpuReadByte(address) ?? 0xFF;
 
 		value &= address switch
 		{
@@ -37,7 +35,7 @@ internal sealed class CpuBus(Emu emu)
 
 	public void WriteByte(ushort address, byte value)
 	{
-		Cartridge?.CpuWriteByte(address, value);
+		emu.Cartridge?.CpuWriteByte(address, value);
 
 		switch (address)
 		{

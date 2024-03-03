@@ -1,7 +1,7 @@
 ﻿namespace NesEmu;
 
 // https://www.nesdev.org/wiki/PPU_memory_map
-internal sealed class PpuBus(Ppu ppu)
+internal sealed class PpuBus(Emu emu)
 {
 	public const ushort PatternTable0Address = 0x0000;
 	public const ushort PatternTable1Address = 0x1000;
@@ -14,8 +14,6 @@ internal sealed class PpuBus(Ppu ppu)
 	public const ushort PaletteRamAddress = 0x3F00;
 
 	private readonly byte[] _paletteRam = new byte[0x20];
-	public Cartridge? Cartridge = null;
-	private readonly Ppu _ppu = ppu;
 
 	public byte ReadByte(ushort address)
 	{
@@ -30,7 +28,7 @@ internal sealed class PpuBus(Ppu ppu)
 			return _paletteRam[address];
 		}
 
-		return Cartridge?.PpuReadByte(_ppu, address) ?? 0xFF;
+		return emu.Cartridge?.PpuReadByte(emu.Ppu, address) ?? 0xFF;
 	}
 
 	public void WriteByte(ushort address, byte value)
@@ -47,6 +45,6 @@ internal sealed class PpuBus(Ppu ppu)
 			return;
 		}
 
-		Cartridge?.PpuWriteByte(_ppu, address, value);
+		emu.Cartridge?.PpuWriteByte(emu.Ppu, address, value);
 	}
 }

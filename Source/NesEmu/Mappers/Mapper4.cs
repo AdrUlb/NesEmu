@@ -1,6 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
-
-namespace NesEmu.Mappers;
+﻿namespace NesEmu.Mappers;
 
 internal sealed class Mapper4 : Mapper
 {
@@ -22,9 +20,12 @@ internal sealed class Mapper4 : Mapper
 
 	private int _bankSelect;
 	private bool _prgRomBankMode;
-	private bool _prgRomBankModeNext;
 	private bool _chrInvert;
-	private bool _chrInvertNext;
+
+	private byte _irqLatch;
+	private int _irqCounter;
+
+	private bool _irqEnabled = true;
 
 	public Mapper4(int prgRomBanks, int chrRomBanks, MirroringMode mirroringMode, Stream data)
 	{
@@ -85,13 +86,13 @@ internal sealed class Mapper4 : Mapper
 	{
 		switch (address)
 		{
+			case >= 0x6000 and <= 0x7FFF: _prgRam[address - 0x6000] = value; break;
 			case >= 0x8000 and <= 0x9FFF:
 				if (address % 2 == 0)
 				{
 					_bankSelect = value & 0b111;
 					_prgRomBankMode = ((value >> 6) & 1) != 0;
 					_chrInvert = ((value >> 7) & 1) != 0;
-					//Console.WriteLine($"0x{address:X4} = 0x{value:X2}");
 				}
 				else
 				{
@@ -109,15 +110,33 @@ internal sealed class Mapper4 : Mapper
 					}
 
 					_banks[_bankSelect] = value;
-
-					//Console.WriteLine($"R{_bankSelect} = {value:X2}");
-					//Console.WriteLine($"Bank mode: {_prgRomBankMode}");
 				}
 				break;
 			case >= 0xA000 and <= 0xBFFE:
 				if (address % 2 == 0)
 				{
 					SetMirroringMode((value & 1) == 0 ? MirroringMode.Vertical : MirroringMode.Horizontal);
+				}
+				break;
+			case >= 0xC000 and <= 0xDFFF:
+				if (address % 2 == 0)
+				{
+					_irqLatch = value;
+				}
+				else
+				{
+					_irqCounter = 0;
+				}
+				break;
+			case >= 0xE000 and <= 0xFFFF:
+				if (address % 2 == 0)
+				{
+					_irqEnabled = false;
+					RequestInterrupt = false;
+				}
+				else
+				{
+					_irqEnabled = true;
 				}
 				break;
 		}
@@ -176,5 +195,18 @@ internal sealed class Mapper4 : Mapper
 			case >= PpuBus.Nametable2Address and < PpuBus.Nametable3Address: ppu.Vram[address - PpuBus.Nametable2Address + Nametable2Offset] = value; break;
 			case >= PpuBus.Nametable3Address and < 0x3000: ppu.Vram[address - PpuBus.Nametable3Address + Nametable3Offset] = value; break;
 		}
+	}
+
+	public override void TickScanline()
+	{
+		if (_irqCounter == 0)
+		{
+			_irqCounter = _irqLatch;
+		}
+		else
+			_irqCounter--;
+
+		if (_irqCounter == 0 && _irqEnabled)
+			RequestInterrupt = true;
 	}
 }

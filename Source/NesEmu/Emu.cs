@@ -19,6 +19,7 @@ internal sealed class Emu : IDisposable
 	public readonly Ppu Ppu;
 	public readonly Apu Apu;
 	public readonly Controller Controller;
+	public Cartridge? Cartridge;
 
 	private readonly WasapiAudioClient _audioClient;
 
@@ -31,13 +32,9 @@ internal sealed class Emu : IDisposable
 
 		_audioClient = new(AudioFormat.IeeeFloat, 44100, 32, 1);
 
-		//using (var fs = File.OpenRead(@"C:\Stuff\Roms\NES\smb2.nes"))
-		//using (var fs = File.OpenRead(@"C:\Stuff\Roms\NES\mansion.nes"))
-		{
-			var cart = new Cartridge(Ppu, fs);
-			Cpu.Bus.Cartridge = cart;
-			Ppu.Bus.Cartridge = cart;
-		}
+		//using (var fs = File.OpenRead(@"C:\Stuff\Roms\NES\nes-test-roms-master\mmc3_test_2\rom_singles\5-MMC3.nes"))
+		using (var fs = File.OpenRead(@"C:\Stuff\Roms\NES\smb2.nes"))
+			Cartridge = new Cartridge(Ppu, fs);
 
 		Cpu.Reset();
 
@@ -56,8 +53,8 @@ internal sealed class Emu : IDisposable
 
 		_audioClient.Start();
 
-		while (!Console.KeyAvailable)
-			Vblank?.Invoke(this, EventArgs.Empty);
+		/*while (!Console.KeyAvailable)
+			Vblank?.Invoke(this, EventArgs.Empty);*/
 
 		while (_running)
 		{
@@ -69,7 +66,7 @@ internal sealed class Emu : IDisposable
 				Cpu.RequestNmi();
 			}
 
-			if (Apu.RequestFrameInterrupt || Apu.RequestDmcInterrupt)
+			if (Apu.AcknowledgeInterrupt() || (Cartridge?.AcknowledgeInterrupt() ?? false))
 				Cpu.RequestIrq();
 
 			if (cycles % 12 == 0 && Ppu.OamWaitCycles == 0)

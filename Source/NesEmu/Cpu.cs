@@ -507,7 +507,7 @@ internal sealed class Cpu
 	}
 
 	public void RequestNmi() => _requestNmi = true;
-	public void RequestIrq() => _requestIrq = true;
+	public void RequestIrq() => _requestIrq = !_flagInterruptDisable;
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	private byte ReadByte(ushort address) => Bus.ReadByte(address);
@@ -568,8 +568,9 @@ internal sealed class Cpu
 				_flagInterruptDisable = true;
 			}
 
-			if (_requestIrq && !_flagInterruptDisable)
+			if (_requestIrq)
 			{
+				_requestIrq = false;
 				_currentOpcode = 0;
 				_inIrq = true;
 			}
@@ -1697,21 +1698,23 @@ internal sealed class Cpu
 				_step++;
 				break;
 			case 1: // read next instruction byte (and throw it away), increment PC
-				FetchByte();
+				if (!_inIrq)
+					FetchByte();
 				_step++;
 				break;
 			case 2: // push PCH on stack, decrement S
-				WriteByte(RegSp, (byte)((_regPc + 2) >> 8));
+				WriteByte(RegSp, (byte)((_regPc) >> 8));
 				_regSpLo--;
 				_step++;
 				break;
 			case 3: // push PCL on stack, decrement S
-				WriteByte(RegSp, (byte)((_regPc + 2) & 0xFF));
+				WriteByte(RegSp, (byte)((_regPc) & 0xFF));
 				_regSpLo--;
 				_step++;
 				break;
 			case 4: // push P on stack (with B flag set), decrement S
 				_flagB = !_inIrq;
+				_inIrq = false;
 				WriteByte(RegSp, RegStatus);
 				_regSpLo--;
 				_flagB = false;
@@ -1762,7 +1765,6 @@ internal sealed class Cpu
 			case 5: // pull PCH from stack
 				_regPc |= (ushort)(ReadByte(RegSp) << 8);
 				_step = 0;
-				_inIrq = false;
 				break;
 			default:
 				throw new UnreachableException();

@@ -6,6 +6,8 @@ internal sealed class Cartridge
 {
 	private readonly Mapper _mapper;
 
+	public bool AcknowledgeInterrupt() => _mapper.AcknowledgeInterrupt();
+
 	public Cartridge(Ppu ppu, Stream data)
 	{
 		Span<byte> signature = [(byte)'N', (byte)'E', (byte)'S', 0x1A];
@@ -45,4 +47,6 @@ internal sealed class Cartridge
 	public byte PpuReadByte(Ppu ppu, ushort address) => _mapper.PpuReadByte(ppu, address);
 
 	public void PpuWriteByte(Ppu ppu, ushort address, byte value) => _mapper.PpuWriteByte(ppu, address, value);
+
+	public void TickScanline() => _mapper.TickScanline();
 }
