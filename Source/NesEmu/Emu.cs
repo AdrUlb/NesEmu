@@ -31,7 +31,8 @@ internal sealed class Emu : IDisposable
 
 		_audioClient = new(AudioFormat.IeeeFloat, 44100, 32, 1);
 
-		using (var fs = File.OpenRead(@"C:\Stuff\Roms\NES\tetris.nes"))
+		//using (var fs = File.OpenRead(@"C:\Stuff\Roms\NES\smb2.nes"))
+		//using (var fs = File.OpenRead(@"C:\Stuff\Roms\NES\mansion.nes"))
 		{
 			var cart = new Cartridge(Ppu, fs);
 			Cpu.Bus.Cartridge = cart;
@@ -54,6 +55,9 @@ internal sealed class Emu : IDisposable
 		var maxAudioPadding = _audioClient.FramesPerSecond / 100;
 
 		_audioClient.Start();
+
+		while (!Console.KeyAvailable)
+			Vblank?.Invoke(this, EventArgs.Empty);
 
 		while (_running)
 		{
@@ -80,9 +84,7 @@ internal sealed class Emu : IDisposable
 				Ppu.Tick();
 
 			if (!wasVblank && Ppu.StatusVblank)
-			{
 				Vblank?.Invoke(this, EventArgs.Empty);
-			}
 
 			if (cycles % _cyclesPerAudioSample == 0)
 			{

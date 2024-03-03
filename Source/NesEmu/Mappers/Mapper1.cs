@@ -25,17 +25,17 @@ internal sealed class Mapper1 : Mapper
 	private readonly byte[] _chrRom;
 	private readonly byte[] _prgRam;
 
-	private int _prgBank0 = 0;
-	private int _prgBank1 = 1;
-
-	private int _chrBank0 = 0;
-	private int _chrBank1 = 1;
-
 	private ChrRomBankMode _chrRomBankMode = ChrRomBankMode.Switch4k;
 	private PrgRomBankMode _prgRomBankMode = PrgRomBankMode.Switch32k;
 
 	private byte _shiftRegisterValue = 0;
 	private byte _shiftRegisterCount = 0;
+
+	private int _prgBank0 = 0;
+	private int _prgBank1 = 1;
+
+	private int _chrBank0 = 0;
+	private int _chrBank1 = 1;
 
 	private readonly bool _chrRam = false;
 
@@ -60,6 +60,7 @@ internal sealed class Mapper1 : Mapper
 		_prgRom = new byte[prgRomSize];
 		_chrRom = new byte[chrRomSize];
 
+		_prgBank0 = 0;
 		_prgBank1 = prgRomBanks - 1;
 
 		data.ReadExactly(_prgRom);
@@ -117,12 +118,10 @@ internal sealed class Mapper1 : Mapper
 					switch (_prgRomBankMode)
 					{
 						case PrgRomBankMode.FixLastSwitchFirst:
-							_prgBank0 = 0;
 							_prgBank1 = _prgRomBanks - 1;
 							break;
 						case PrgRomBankMode.FixFirstSwitchLast:
 							_prgBank0 = 0;
-							_prgBank1 = 1;
 							break;
 						case PrgRomBankMode.Switch32k or PrgRomBankMode.Switch32kAlt:
 							_prgBank0 = 0;
@@ -160,8 +159,10 @@ internal sealed class Mapper1 : Mapper
 				{
 					case PrgRomBankMode.FixLastSwitchFirst:
 						_prgBank0 = (_shiftRegisterValue & 0b1111) % _prgRomBanks;
+						_prgBank1 = _prgRomBanks - 1;
 						break;
 					case PrgRomBankMode.FixFirstSwitchLast:
+						_prgBank0 = 0;
 						_prgBank1 = (_shiftRegisterValue & 0b1111) % _prgRomBanks;
 						break;
 					case PrgRomBankMode.Switch32k or PrgRomBankMode.Switch32kAlt:

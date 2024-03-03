@@ -351,7 +351,7 @@ internal sealed class Cpu
 		// 0xC0 - 0xCF
 		new(Instruction.Cpy, "CPY", AddressingMode.Immediate),
 		new(Instruction.Cmp, "CMP", AddressingMode.XIndexedIndirect, Category.Read),
-		new(Instruction.Nop, "*NOP", AddressingMode.Implied, Category.Implied),
+		new(Instruction.Nop, "*NOP", AddressingMode.Immediate),
 		new(Instruction.IllDcp, "*DCP", AddressingMode.XIndexedIndirect, Category.ReadModifyWrite),
 		new(Instruction.Cpy, "CPY", AddressingMode.Zeropage, Category.Read),
 		new(Instruction.Cmp, "CMP", AddressingMode.Zeropage, Category.Read),

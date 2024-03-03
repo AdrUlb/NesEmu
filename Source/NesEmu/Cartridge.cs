@@ -32,6 +32,8 @@ internal sealed class Cartridge
 		{
 			0 => new Mapper0(prgRomBanks, chrRomBanks, mirroringMode, data),
 			1 => new Mapper1(prgRomBanks, chrRomBanks, mirroringMode, data),
+			2 => new Mapper2(prgRomBanks, chrRomBanks, mirroringMode, data),
+			4 => new Mapper4(prgRomBanks, chrRomBanks, mirroringMode, data),
 			_ => throw new NotImplementedException($"Mapper {mapperNumber} not implemented.")
 		};
 	}

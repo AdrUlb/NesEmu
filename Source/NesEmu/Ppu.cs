@@ -304,7 +304,7 @@ internal sealed class Ppu
 									if (spriteInRange)
 									{
 										_spriteEvalM++; // Next byte in the sprite
-										_spriteEvalWrite = true; // Write this byte
+										_spriteEvalWrite = _spriteEvalCount < 8; // Write this byte
 
 										if (_spriteEvalN == 0)
 											_spriteScanlineHasSprite0 = true;
@@ -339,7 +339,7 @@ internal sealed class Ppu
 							}
 							else // On even cycles, data is written to secondary OAM (unless secondary OAM is full, in which case it will read the value in secondary OAM instead)
 							{
-								if (_spriteEvalWrite && _spriteEvalCount < 8)
+								if (_spriteEvalWrite)
 									_secondaryOam[_spriteEvalWriteOffset++] = _spriteEvalReadBuffer;
 
 								if (_spriteEvalWriteOffset >= _secondaryOam.Length)
