@@ -299,39 +299,30 @@ internal sealed class Ppu
 						_spriteEvalWriteOffset = 0;
 						_spriteScanlineHasSprite0 = false;
 						_spriteEvalCount = 0;
+						Array.Fill<byte>(_secondaryOam, 0xFF);
 						break;
-					case >= 1 and <= 256:
+					case >= 64 and <= 256:
 						{
 							if (_cycle % 2 == 1) // On odd cycles, data is read from (primary) OAM
 							{
-								if (_cycle <= 64)
-								{
-									_spriteEvalReadBuffer = 0xFF;
-									_spriteEvalWrite = true;
-									break;
-								}
+								// Read byte M of sprite N
+								_spriteEvalReadBuffer = _oam[(4 * (_spriteEvalN % 64)) + _spriteEvalM];
 
-								_spriteEvalReadBuffer = _oam[(4 * (_spriteEvalN % 64)) + _spriteEvalM]; // Read byte M of sprite N
-
-								var spriteHeight = _ctrlSpriteSize ? 16 : 8;
-
-								if (_spriteEvalM == 0) // If this is the first byte of the sprite
+								// If this is the first byte of the sprite
+								if (_spriteEvalM == 0)
 								{
 									// Check if the sprite is part of this scanline
-									var spriteInRange = _scanline >= _spriteEvalReadBuffer && _scanline < _spriteEvalReadBuffer + spriteHeight;
+									var spriteInRange = _scanline >= _spriteEvalReadBuffer && _scanline < _spriteEvalReadBuffer + (_ctrlSpriteSize ? 16 : 8);
 									if (spriteInRange)
 									{
 										_spriteEvalM++; // Next byte in the sprite
-										_spriteEvalWrite = _spriteEvalCount < 8; // Write this byte
+										_spriteEvalWrite = _spriteEvalN < 64 && _spriteEvalCount < 8; // Write this byte if OAM not full
 
 										if (_spriteEvalN == 0)
 											_spriteScanlineHasSprite0 = true;
 
 										if (_spriteEvalN >= 64)
-										{
 											_statusSpriteOverflow = true;
-											_spriteEvalWrite = false;
-										}
 									}
 									else
 									{
@@ -344,7 +335,7 @@ internal sealed class Ppu
 								else
 								{
 									_spriteEvalM++; // Next byte
-									_spriteEvalWrite = _spriteEvalN < 64; // Write read byte
+									_spriteEvalWrite = _spriteEvalN < 64 && _spriteEvalCount < 8; // Write read byte
 								}
 
 								if (_spriteEvalM >= 4) // Last byte of sprite was read
@@ -402,7 +393,7 @@ internal sealed class Ppu
 											continue;
 
 										x = flipX ? x : 7 - x;
-										y  = flipY ? spriteHeight - 1 - y : y;
+										y = flipY ? spriteHeight - 1 - y : y;
 
 										var usePatternTable = patternTable;
 
