@@ -11,6 +11,7 @@ internal sealed class Emu : IDisposable
 
 	public const int CyclesPerSecond = 21477272;
 	public const double FramesPerSecond = CyclesPerSecond / 4.0 / 262.5 / 341.0;
+	public const double CyclesPerFrame = CyclesPerSecond / FramesPerSecond;
 	public static readonly double TicksPerFrame = Stopwatch.Frequency / FramesPerSecond;
 	private static readonly int _cyclesPerAudioSample = CyclesPerSecond / 44100;
 
@@ -21,7 +22,7 @@ internal sealed class Emu : IDisposable
 	public readonly Controller Controller;
 	public Cartridge? Cartridge;
 
-	private readonly WasapiAudioClient _audioClient;
+	private readonly WasapiAudioClient? _audioClient;
 
 	public Emu()
 	{
@@ -30,10 +31,11 @@ internal sealed class Emu : IDisposable
 		Apu = new(this);
 		Controller = new();
 
-		_audioClient = new(AudioFormat.IeeeFloat, 44100, 32, 1);
+		if (OperatingSystem.IsWindows())
+			_audioClient = new(AudioFormat.IeeeFloat, 44100, 32, 1);
 
 		//using (var fs = File.OpenRead(@"C:\Stuff\Roms\NES\nes-test-roms-master\mmc3_test_2\rom_singles\5-MMC3.nes"))
-		using (var fs = File.OpenRead(@"C:\Stuff\Roms\NES\zelda.nes"))
+		using (var fs = File.OpenRead(@"/Users/adrian/Downloads/tetris.nes"))
 			Cartridge = new Cartridge(Ppu, fs);
 
 		Cpu.Reset();
@@ -49,13 +51,11 @@ internal sealed class Emu : IDisposable
 	{
 		uint cycles = 0;
 
-		var maxAudioPadding = _audioClient.FramesPerSecond / 100;
+		var maxAudioPadding = _audioClient?.FramesPerSecond ?? 0 / 100;
+		_audioClient?.Start();
 
-		_audioClient.Start();
-
-		/*while (!Console.KeyAvailable)
-			Vblank?.Invoke(this, EventArgs.Empty);*/
-
+		var stopwatch = Stopwatch.StartNew();
+		
 		while (_running)
 		{
 			cycles++;
@@ -83,18 +83,27 @@ internal sealed class Emu : IDisposable
 			if (!wasVblank && Ppu.StatusVblank)
 				Vblank?.Invoke(this, EventArgs.Empty);
 
-			if (cycles % _cyclesPerAudioSample == 0)
+			if (_audioClient != null)
 			{
-				_sample = Apu.GetOutput();
-				while (_audioClient.PaddingFrames > maxAudioPadding) { }
-				if (_audioClient.TryGetBuffer<float>(1, out var buffer))
+				if (cycles % _cyclesPerAudioSample == 0)
 				{
-					buffer[0] = _sample;
-					_audioClient.ReleaseBuffer(1);
+					_sample = Apu.GetOutput();
+					while (_audioClient.PaddingFrames > maxAudioPadding) { }
+					if (_audioClient.TryGetBuffer<float>(1, out var buffer))
+					{
+						buffer[0] = _sample;
+						_audioClient.ReleaseBuffer(1);
+					}
 				}
 			}
+			else if (cycles >= CyclesPerFrame)
+			{
+				while (stopwatch.Elapsed.TotalMilliseconds < 1000 / FramesPerSecond) ;
+				cycles -= (uint)CyclesPerFrame;
+				stopwatch.Restart();
+			}
 		}
-		_audioClient.Stop();
+		_audioClient?.Stop();
 	}
 
 	public void Start()
@@ -124,6 +133,7 @@ internal sealed class Emu : IDisposable
 
 	private void Dispose(bool disposing)
 	{
-		_audioClient.Dispose();
+		if (_audioClient != null)
+			_audioClient.Dispose();
 	}
 }

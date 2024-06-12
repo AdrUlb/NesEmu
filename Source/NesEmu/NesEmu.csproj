@@ -13,14 +13,15 @@
 		<IlcDisableReflection>true</IlcDisableReflection>
 	</PropertyGroup>
 
-	<ItemGroup>
-		<DirectPInvoke Include="AudioThing.Wasapi" />
+	<ItemGroup Condition="$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Windows)))">
+		<DirectPInvoke Include="AudioThing.Wasapi" Visible="false" />
 		<NativeLibrary Include="..\..\External\AudioThing\NativeLibs\win-x64\AudioThing.Wasapi.Static.lib" />
 	</ItemGroup>
 
 	<ItemGroup>
 		<ProjectReference Include="..\..\External\AudioThing\Source\AudioThing\AudioThing.csproj" />
 		<ProjectReference Include="..\..\External\RenderThing\Source\RenderThing\RenderThing.csproj" />
+		<ProjectReference Include="..\..\External\WindowThing\Source\WindowThing\WindowThing.csproj" />
 	</ItemGroup>
 
 	<ItemGroup>

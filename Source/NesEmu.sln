@@ -5,19 +5,19 @@ VisualStudioVersion = 17.9.34518.117
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "NesEmu", "NesEmu\NesEmu.csproj", "{8AB58B13-FD90-46B2-81DA-B3FA41E20D62}"
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "RenderThing", "RenderThing", "{96D48B55-41D6-4C41-8844-83CC1D02A6DA}"
-EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "External", "External", "{5D9E1123-2A44-4D52-84E4-A2B7F86C9570}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "RenderThing", "..\External\RenderThing\Source\RenderThing\RenderThing.csproj", "{0C246BCA-84B8-424B-B21F-2572574C8D46}"
-EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "RenderThing.Bindings.FreeType", "..\External\RenderThing\Source\RenderThing.Bindings.FreeType\RenderThing.Bindings.FreeType.csproj", "{C8B02E11-511C-49FF-A7AB-57F9B7F7C53A}"
-EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "RenderThing.Bindings.Glfw", "..\External\RenderThing\Source\RenderThing.Bindings.Glfw\RenderThing.Bindings.Glfw.csproj", "{C31BC31B-344E-4B61-B1DB-277A99840D35}"
-EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "RenderThing.Bindings.Gl", "..\External\RenderThing\Source\RenderThing.Bindings.Gl\RenderThing.Bindings.Gl.csproj", "{E0D6F897-BDCD-4033-A598-F75FE4E5DA28}"
-EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "AudioThing", "..\External\AudioThing\Source\AudioThing\AudioThing.csproj", "{F4607AD8-B62E-404E-A4D6-A084A7C2ACE4}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "WindowThing", "WindowThing", "{40E2E703-C1CD-448B-927E-4F824917424C}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WindowThing", "..\External\WindowThing\Source\WindowThing\WindowThing.csproj", "{04EF13EB-E76E-475B-9200-97CD5E79295D}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WindowThing.Bindings.FreeType", "..\External\WindowThing\Source\WindowThing.Bindings.FreeType\WindowThing.Bindings.FreeType.csproj", "{5074E1E0-1370-4002-A7B4-E9FAC41055AD}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WindowThing.Bindings.Glfw", "..\External\WindowThing\Source\WindowThing.Bindings.Glfw\WindowThing.Bindings.Glfw.csproj", "{93F2C853-7A79-4FC7-8A04-B3FFC95C217C}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WindowThing.Bindings.Gl", "..\External\WindowThing\Source\WindowThing.Bindings.Gl\WindowThing.Bindings.Gl.csproj", "{E295FBCB-8BA3-4CC4-9AFB-5F622215D541}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -29,37 +29,37 @@ Global
 		{8AB58B13-FD90-46B2-81DA-B3FA41E20D62}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{8AB58B13-FD90-46B2-81DA-B3FA41E20D62}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{8AB58B13-FD90-46B2-81DA-B3FA41E20D62}.Release|Any CPU.Build.0 = Release|Any CPU
-		{0C246BCA-84B8-424B-B21F-2572574C8D46}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{0C246BCA-84B8-424B-B21F-2572574C8D46}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{0C246BCA-84B8-424B-B21F-2572574C8D46}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{0C246BCA-84B8-424B-B21F-2572574C8D46}.Release|Any CPU.Build.0 = Release|Any CPU
-		{C8B02E11-511C-49FF-A7AB-57F9B7F7C53A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{C8B02E11-511C-49FF-A7AB-57F9B7F7C53A}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{C8B02E11-511C-49FF-A7AB-57F9B7F7C53A}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{C8B02E11-511C-49FF-A7AB-57F9B7F7C53A}.Release|Any CPU.Build.0 = Release|Any CPU
-		{C31BC31B-344E-4B61-B1DB-277A99840D35}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{C31BC31B-344E-4B61-B1DB-277A99840D35}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{C31BC31B-344E-4B61-B1DB-277A99840D35}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{C31BC31B-344E-4B61-B1DB-277A99840D35}.Release|Any CPU.Build.0 = Release|Any CPU
-		{E0D6F897-BDCD-4033-A598-F75FE4E5DA28}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{E0D6F897-BDCD-4033-A598-F75FE4E5DA28}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{E0D6F897-BDCD-4033-A598-F75FE4E5DA28}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{E0D6F897-BDCD-4033-A598-F75FE4E5DA28}.Release|Any CPU.Build.0 = Release|Any CPU
 		{F4607AD8-B62E-404E-A4D6-A084A7C2ACE4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{F4607AD8-B62E-404E-A4D6-A084A7C2ACE4}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{F4607AD8-B62E-404E-A4D6-A084A7C2ACE4}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{F4607AD8-B62E-404E-A4D6-A084A7C2ACE4}.Release|Any CPU.Build.0 = Release|Any CPU
+		{04EF13EB-E76E-475B-9200-97CD5E79295D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{04EF13EB-E76E-475B-9200-97CD5E79295D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{04EF13EB-E76E-475B-9200-97CD5E79295D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{04EF13EB-E76E-475B-9200-97CD5E79295D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5074E1E0-1370-4002-A7B4-E9FAC41055AD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5074E1E0-1370-4002-A7B4-E9FAC41055AD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5074E1E0-1370-4002-A7B4-E9FAC41055AD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5074E1E0-1370-4002-A7B4-E9FAC41055AD}.Release|Any CPU.Build.0 = Release|Any CPU
+		{93F2C853-7A79-4FC7-8A04-B3FFC95C217C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{93F2C853-7A79-4FC7-8A04-B3FFC95C217C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{93F2C853-7A79-4FC7-8A04-B3FFC95C217C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{93F2C853-7A79-4FC7-8A04-B3FFC95C217C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E295FBCB-8BA3-4CC4-9AFB-5F622215D541}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E295FBCB-8BA3-4CC4-9AFB-5F622215D541}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E295FBCB-8BA3-4CC4-9AFB-5F622215D541}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E295FBCB-8BA3-4CC4-9AFB-5F622215D541}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
-		{96D48B55-41D6-4C41-8844-83CC1D02A6DA} = {5D9E1123-2A44-4D52-84E4-A2B7F86C9570}
-		{0C246BCA-84B8-424B-B21F-2572574C8D46} = {96D48B55-41D6-4C41-8844-83CC1D02A6DA}
-		{C8B02E11-511C-49FF-A7AB-57F9B7F7C53A} = {96D48B55-41D6-4C41-8844-83CC1D02A6DA}
-		{C31BC31B-344E-4B61-B1DB-277A99840D35} = {96D48B55-41D6-4C41-8844-83CC1D02A6DA}
-		{E0D6F897-BDCD-4033-A598-F75FE4E5DA28} = {96D48B55-41D6-4C41-8844-83CC1D02A6DA}
 		{F4607AD8-B62E-404E-A4D6-A084A7C2ACE4} = {5D9E1123-2A44-4D52-84E4-A2B7F86C9570}
+		{40E2E703-C1CD-448B-927E-4F824917424C} = {5D9E1123-2A44-4D52-84E4-A2B7F86C9570}
+		{04EF13EB-E76E-475B-9200-97CD5E79295D} = {40E2E703-C1CD-448B-927E-4F824917424C}
+		{5074E1E0-1370-4002-A7B4-E9FAC41055AD} = {40E2E703-C1CD-448B-927E-4F824917424C}
+		{93F2C853-7A79-4FC7-8A04-B3FFC95C217C} = {40E2E703-C1CD-448B-927E-4F824917424C}
+		{E295FBCB-8BA3-4CC4-9AFB-5F622215D541} = {40E2E703-C1CD-448B-927E-4F824917424C}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {75DC5885-0A76-4850-8F01-047EE961155F}
