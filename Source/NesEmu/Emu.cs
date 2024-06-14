@@ -35,7 +35,7 @@ internal sealed class Emu : IDisposable
 			_audioClient = new(AudioFormat.IeeeFloat, 44100, 32, 1);
 
 		//using (var fs = File.OpenRead(@"C:\Stuff\Roms\NES\nes-test-roms-master\mmc3_test_2\rom_singles\5-MMC3.nes"))
-		using (var fs = File.OpenRead(@"/home/adrian/Downloads/tetris.nes"))
+		using (var fs = File.OpenRead(@"/home/adrian/Downloads/smb3.nes"))
 			Cartridge = new Cartridge(Ppu, fs);
 
 		Cpu.Reset();
