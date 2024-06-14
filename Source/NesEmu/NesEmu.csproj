@@ -20,7 +20,6 @@
 
 	<ItemGroup>
 		<ProjectReference Include="..\..\External\AudioThing\Source\AudioThing\AudioThing.csproj" />
-		<ProjectReference Include="..\..\External\RenderThing\Source\RenderThing\RenderThing.csproj" />
 		<ProjectReference Include="..\..\External\WindowThing\Source\WindowThing\WindowThing.csproj" />
 	</ItemGroup>
 

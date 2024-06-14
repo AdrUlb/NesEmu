@@ -22,7 +22,7 @@ internal sealed class Emu : IDisposable
 	public readonly Controller Controller;
 	public Cartridge? Cartridge;
 
-	private readonly WasapiAudioClient? _audioClient;
+	private readonly AudioClient? _audioClient;
 
 	public Emu()
 	{
@@ -31,11 +31,11 @@ internal sealed class Emu : IDisposable
 		Apu = new(this);
 		Controller = new();
 
-		if (OperatingSystem.IsWindows())
+		if (OperatingSystem.IsWindows() || OperatingSystem.IsLinux())
 			_audioClient = new(AudioFormat.IeeeFloat, 44100, 32, 1);
 
 		//using (var fs = File.OpenRead(@"C:\Stuff\Roms\NES\nes-test-roms-master\mmc3_test_2\rom_singles\5-MMC3.nes"))
-		using (var fs = File.OpenRead(@"/Users/adrian/Downloads/tetris.nes"))
+		using (var fs = File.OpenRead(@"/home/adrian/Downloads/tetris.nes"))
 			Cartridge = new Cartridge(Ppu, fs);
 
 		Cpu.Reset();

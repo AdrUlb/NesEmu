@@ -1,4 +1,4 @@
-﻿using NesEmu;
+﻿namespace NesEmu;
 
 internal static class Program
 {
