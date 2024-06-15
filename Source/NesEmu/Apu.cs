@@ -368,7 +368,7 @@ internal sealed class Apu(Emu emu)
 	private TriangleChannel _triangle = new();
 	private NoiseChannel _noise = new();
 	private DmcChannel _dmc = new(emu);
-	private readonly LowPassFilter _lowPassFilter = new(0.5);
+	private readonly LowPassFilter _lowPassFilter = new(0.8);
 
 	private int _frameCounter = 0;
 	private int _frameCounterMode = 1;
@@ -382,7 +382,7 @@ internal sealed class Apu(Emu emu)
 	private static readonly int[] _dmcRates = [428, 380, 340, 320, 286, 254, 226, 214, 190, 160, 142, 128, 106, 84, 72, 54];
 	private static readonly int[] _noiseTimerPeriods = [4, 8, 16, 32, 64, 96, 128, 160, 202, 254, 380, 508, 762, 1016, 2034, 4068];
 
-	public bool RequestFrameInterrupt { get; private set; } = false;
+	private bool _requestFrameInterrupt = false;
 
 	public bool AcknowledgeInterrupt()
 	{
@@ -392,9 +392,9 @@ internal sealed class Apu(Emu emu)
 			return true;
 		}
 
-		if (RequestFrameInterrupt)
+		if (_requestFrameInterrupt)
 		{
-			RequestFrameInterrupt = false;
+			_requestFrameInterrupt = false;
 			return true;
 		}
 
@@ -413,10 +413,10 @@ internal sealed class Apu(Emu emu)
 						((_triangle.LengthCounter.Value != 0 ? 1 : 0) << 2) |
 						((_noise.LengthCounter.Value != 0 ? 1 : 0) << 3) |
 						((_dmc.BytesRemaining > 0 ? 1 : 0) << 4) |
-						((RequestFrameInterrupt ? 1 : 0) << 6) |
+						((_requestFrameInterrupt ? 1 : 0) << 6) |
 						((_dmc.RequestInterrupt ? 1 : 0) << 7));
 
-					RequestFrameInterrupt = false;
+					_requestFrameInterrupt = false;
 
 					return ret;
 				}
@@ -574,7 +574,7 @@ internal sealed class Apu(Emu emu)
 				_frameCounterInterruptInhibit = ((value >> 6) & 1) != 0;
 
 				if (_frameCounterInterruptInhibit)
-					RequestFrameInterrupt = false;
+					_requestFrameInterrupt = false;
 
 				_frameCounterResetCounter = _cycles % 2 == 1 ? 3 : 4;
 				_frameCounterClockOn0InMode5 = true;
@@ -634,17 +634,17 @@ internal sealed class Apu(Emu emu)
 				break;
 			case (14914 * 2):
 				if (!_frameCounterInterruptInhibit)
-					RequestFrameInterrupt = true;
+					_requestFrameInterrupt = true;
 				break;
 			case (14914 * 2) + 1:
 				if (!_frameCounterInterruptInhibit)
-					RequestFrameInterrupt = true;
+					_requestFrameInterrupt = true;
 				DoQuarterFrame();
 				DoHalfFrame();
 				break;
 			case 14915 * 2:
 				if (!_frameCounterInterruptInhibit)
-					RequestFrameInterrupt = true;
+					_requestFrameInterrupt = true;
 				_frameCounter = 0;
 				break;
 		}
