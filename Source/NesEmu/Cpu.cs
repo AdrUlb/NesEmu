@@ -114,7 +114,7 @@ internal sealed class Cpu
 	private readonly struct Operation(Instruction instruction, string mnemonic, AddressingMode addressingMode, Category type = Category.Unknown)
 	{
 		public readonly Instruction Instruction = instruction;
-		public readonly string mnemonic = mnemonic;
+		public readonly string Mnemonic = mnemonic;
 		public readonly AddressingMode AddressingMode = addressingMode;
 		public readonly Category Category = type;
 
@@ -533,22 +533,22 @@ internal sealed class Cpu
 		var b2 = ReadByte((ushort)(_regPc + 1));
 		return inst.AddressingMode switch
 		{
-			AddressingMode.Relative => inst.mnemonic + $" ${_regPc + 1 + (sbyte)b1:X4}",
-			AddressingMode.Immediate => inst.mnemonic + $" #${b1:X2}",
+			AddressingMode.Relative => inst.Mnemonic + $" ${_regPc + 1 + (sbyte)b1:X4}",
+			AddressingMode.Immediate => inst.Mnemonic + $" #${b1:X2}",
 
-			AddressingMode.Absolute => inst.mnemonic + $" ${b2:X2}{b1:X2}",
-			AddressingMode.AbsoluteXIndexed => inst.mnemonic + $" ${b2:X2}{b1:X2},X",
-			AddressingMode.AbsoluteYIndexed => inst.mnemonic + $" ${b2:X2}{b1:X2},Y",
+			AddressingMode.Absolute => inst.Mnemonic + $" ${b2:X2}{b1:X2}",
+			AddressingMode.AbsoluteXIndexed => inst.Mnemonic + $" ${b2:X2}{b1:X2},X",
+			AddressingMode.AbsoluteYIndexed => inst.Mnemonic + $" ${b2:X2}{b1:X2},Y",
 
-			AddressingMode.Zeropage => inst.mnemonic + $" ${b1:X2} = {ReadByte(b1):X2}",
-			AddressingMode.ZeropageXIndexed => inst.mnemonic + $" ${b1:X2},X",
-			AddressingMode.ZeropageYIndexed => inst.mnemonic + $" ${b1:X2},Y",
+			AddressingMode.Zeropage => inst.Mnemonic + $" ${b1:X2} = {ReadByte(b1):X2}",
+			AddressingMode.ZeropageXIndexed => inst.Mnemonic + $" ${b1:X2},X",
+			AddressingMode.ZeropageYIndexed => inst.Mnemonic + $" ${b1:X2},Y",
 
-			AddressingMode.Indirect => inst.mnemonic + $" (${b2:X2}{b1:X2})",
-			AddressingMode.XIndexedIndirect => inst.mnemonic + $" (${b1:X2},X)",
-			AddressingMode.IndirectYIndexed => inst.mnemonic + $" (${b1:X2}),Y",
+			AddressingMode.Indirect => inst.Mnemonic + $" (${b2:X2}{b1:X2})",
+			AddressingMode.XIndexedIndirect => inst.Mnemonic + $" (${b1:X2},X)",
+			AddressingMode.IndirectYIndexed => inst.Mnemonic + $" (${b1:X2}),Y",
 
-			_ => inst.mnemonic
+			_ => inst.Mnemonic
 		};
 	}
 
