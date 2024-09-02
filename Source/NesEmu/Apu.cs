@@ -25,7 +25,7 @@ internal sealed class Apu(Emu emu)
 		public int VolumeOrDividerReload;
 
 		public bool StartFlag;
-		private int DecayLevelCounter;
+		private int _decayLevelCounter;
 		private int _divider;
 
 		public int Volume;
@@ -38,12 +38,12 @@ internal sealed class Apu(Emu emu)
 				_divider = VolumeOrDividerReload;
 
 				// Then one of two actions occurs:
-				if (DecayLevelCounter != 0) // If the counter is non-zero, it is decremented
-					DecayLevelCounter--;
+				if (_decayLevelCounter != 0) // If the counter is non-zero, it is decremented
+					_decayLevelCounter--;
 
 				else if (LoopFlag) // otherwise if the loop flag is set, the decay level counter is loaded with 15.
 				{
-					DecayLevelCounter = 15;
+					_decayLevelCounter = 15;
 				}
 			}
 			else
@@ -59,11 +59,11 @@ internal sealed class Apu(Emu emu)
 			else // Otherwise the start flag is cleared, the decay level counter is loaded with 15, and the divider's period is immediately reloaded
 			{
 				StartFlag = false;
-				DecayLevelCounter = 15;
+				_decayLevelCounter = 15;
 				_divider = VolumeOrDividerReload;
 			}
 
-			Volume = ConstantVolumeFlag ? VolumeOrDividerReload : DecayLevelCounter;
+			Volume = ConstantVolumeFlag ? VolumeOrDividerReload : _decayLevelCounter;
 		}
 	}
 
@@ -368,7 +368,7 @@ internal sealed class Apu(Emu emu)
 	private TriangleChannel _triangle = new();
 	private NoiseChannel _noise = new();
 	private DmcChannel _dmc = new(emu);
-	private readonly LowPassFilter _lowPassFilter = new(0.8);
+	private readonly LowPassFilter _lowPassFilter = new(0.9);
 
 	private int _frameCounter = 0;
 	private int _frameCounterMode = 1;
@@ -732,7 +732,7 @@ internal sealed class Apu(Emu emu)
 	{
 		//return _pulse1.Output ? _pulse1.Envelope.Volume : 0;
 
-		var pulse1freq = (Emu.CyclesPerSecond / 12.0) / (16.0 * (_pulse1.TimerReload + 1));
+		var pulse1Freq = (Emu.CyclesPerSecond / 12.0) / (16.0 * (_pulse1.TimerReload + 1));
 		var pulse1dutyCycle = _pulse1.DutyCycle switch
 		{
 			0 => 0.125,
@@ -745,7 +745,7 @@ internal sealed class Apu(Emu emu)
 		if (_pulse1.LengthCounter.Value == 0 || _pulse1.Sweep.MuteChannel)
 			return 0;
 
-		return _pulse1.GenerateSample(pulse1freq, pulse1dutyCycle) * _pulse1.Envelope.Volume;
+		return _pulse1.GenerateSample(pulse1Freq, pulse1dutyCycle) * _pulse1.Envelope.Volume;
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -753,7 +753,7 @@ internal sealed class Apu(Emu emu)
 	{
 		//return _pulse2.Output ? _pulse2.Envelope.Volume : 0;
 
-		var pulse2freq = Emu.CyclesPerSecond / 12.0 / (16.0 * (_pulse2.TimerReload + 1));
+		var pulse2Freq = Emu.CyclesPerSecond / 12.0 / (16.0 * (_pulse2.TimerReload + 1));
 		var pulse2dutyCycle = _pulse2.DutyCycle switch
 		{
 			0 => 0.125,
@@ -766,11 +766,13 @@ internal sealed class Apu(Emu emu)
 		if (_pulse2.LengthCounter.Value == 0 || _pulse2.Sweep.MuteChannel)
 			return 0;
 
-		return _pulse2.GenerateSample(pulse2freq, pulse2dutyCycle) * _pulse2.Envelope.Volume;
+		return _pulse2.GenerateSample(pulse2Freq, pulse2dutyCycle) * _pulse2.Envelope.Volume;
 	}
 
+
+	// Outputting a constant value if the reload is less than 2 is a hack. The actual fix is a filter.
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	private double GetTriangle() => _triangle.Output;
+	private double GetTriangle() => _triangle.TimerReload < 2 ? 7 : _triangle.Output;
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	private double GetNoise() => _noise.Output && _noise.LengthCounter.Value != 0 ? _noise.Envelope.Volume : 0;

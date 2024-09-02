@@ -1,20 +1,21 @@
 ﻿using System.Drawing;
-using RenderThing;
+using WindowThing;
 
 namespace NesEmu;
 
 internal class MainWindow : Window
 {
-	private readonly Emu _emu = new();
+	private readonly Emu _emu;
 
 	private Texture _tex = null!;
 
 	private volatile bool _waitForVblank = true;
 
-	public MainWindow() : base(resizable: false)
+	public MainWindow(string romFilePath) : base(resizable: false)
 	{
 		Title = "Adrian's NES Emulator";
-		Size = new(256 * 3, 240 * 3);
+		Size = new(256 * 4, 240 * 4);
+		_emu = new(romFilePath);
 		_emu.Vblank += (_, _) => _waitForVblank = false;
 	}
 

@@ -6,13 +6,12 @@ namespace NesEmu;
 
 internal sealed class Ppu
 {
-	public const int ScreenWidth = 256;
-	public const int ScreenHeight = 240;
+	private const int ScreenWidth = 256;
+	private const int ScreenHeight = 240;
 
-	private const int _tileColumns = 32;
-	private const int _cyclesPerScanline = 341;
+	private const int CyclesPerScanline = 341;
 
-	public readonly PpuBus Bus;
+	private readonly PpuBus _bus;
 	private readonly Emu _emu;
 
 	private int _scanline = 261;
@@ -53,7 +52,6 @@ internal sealed class Ppu
 	private byte _ctrlBackgroundPatternTable = 0;
 	private bool _ctrlSpritePatternTable = false;
 	private bool _ctrlAddrIncrMode = false;
-	private byte _ctrlBaseNametableAddr;
 
 	private bool _maskShowBackgroundInLeftmost8Pixels;
 	private bool _maskShowSpritesInLeftmost8Pixels;
@@ -80,31 +78,6 @@ internal sealed class Ppu
 
 	public bool RenderingEnabled => _maskShowBackground || _maskShowSprites;
 
-	private byte RegCtrl
-	{
-		get => (byte)
-		(
-			((_ctrlEnableVblankNmi ? 1 : 0) << 7) |
-			((_ctrlMasterSlaveSelect ? 1 : 0) << 6) |
-			((_ctrlSpriteSize ? 1 : 0) << 5) |
-			((_ctrlBackgroundPatternTable & 1) << 4) |
-			((_ctrlSpritePatternTable ? 1 : 0) << 3) |
-			((_ctrlAddrIncrMode ? 1 : 0) << 2) |
-			(_ctrlBaseNametableAddr & 0b11)
-		);
-
-		set
-		{
-			_ctrlEnableVblankNmi = ((value >> 7) & 1) != 0;
-			_ctrlMasterSlaveSelect = ((value >> 6) & 1) != 0;
-			_ctrlSpriteSize = ((value >> 5) & 1) != 0;
-			_ctrlBackgroundPatternTable = (byte)((value >> 4) & 1);
-			_ctrlSpritePatternTable = ((value >> 3) & 1) != 0;
-			_ctrlAddrIncrMode = ((value >> 2) & 1) != 0;
-			_ctrlBaseNametableAddr = (byte)(value & 0b11);
-		}
-	}
-
 	private byte RegStatus
 	{
 		get => (byte)
@@ -119,7 +92,7 @@ internal sealed class Ppu
 
 	public Ppu(Emu emu)
 	{
-		Bus = new(emu);
+		_bus = new(emu);
 		_emu = emu;
 
 		using var fs = File.OpenRead("palette.pal");
@@ -161,13 +134,13 @@ internal sealed class Ppu
 					byte ret;
 					if (_regV is >= 0x3F00 and < 0x4000) // Palette
 					{
-						ret = _regData = Bus.ReadByte(_regV);
-						_regData = Bus.ReadByte((ushort)(_regV - 0x1000));
+						ret = _regData = _bus.ReadByte(_regV);
+						_regData = _bus.ReadByte((ushort)(_regV - 0x1000));
 					}
 					else // VRAM
 					{
 						ret = _regData;
-						_regData = Bus.ReadByte(_regV);
+						_regData = _bus.ReadByte(_regV);
 					}
 
 					if (_ctrlAddrIncrMode)
@@ -182,9 +155,8 @@ internal sealed class Ppu
 
 					return ret;
 				}
-
-			case 0x2006:
-			case 0x4014:
+			//case 0x2006:
+			//case 0x4014:
 			default:
 				return 0;
 		}
@@ -195,13 +167,18 @@ internal sealed class Ppu
 		switch (num)
 		{
 			case 0x2000: // PPUCTRL - write only
-				RegCtrl = value;
+				_ctrlEnableVblankNmi = ((value >> 7) & 1) != 0;
+				_ctrlMasterSlaveSelect = ((value >> 6) & 1) != 0;
+				_ctrlSpriteSize = ((value >> 5) & 1) != 0;
+				_ctrlBackgroundPatternTable = (byte)((value >> 4) & 1);
+				_ctrlSpritePatternTable = ((value >> 3) & 1) != 0;
+				_ctrlAddrIncrMode = ((value >> 2) & 1) != 0;
 				_regT &= 0b1110011_11111111;
 				_regT |= (ushort)((value & 0b11) << 10);
 				break;
 			case 0x2001: // PPUMASK - write only
-				_maskShowBackgroundInLeftmost8Pixels = ((value >> 1) & 1) != 0;
-				_maskShowSpritesInLeftmost8Pixels = ((value >> 2) & 1) != 0;
+				_maskShowBackgroundInLeftmost8Pixels = ((value >> 1) & 1) == 1;
+				_maskShowSpritesInLeftmost8Pixels = ((value >> 2) & 1) == 1;
 				_maskShowBackground = ((value >> 3) & 1) != 0;
 				_maskShowSprites = ((value >> 4) & 1) != 0;
 				break;
@@ -248,7 +225,7 @@ internal sealed class Ppu
 				if ((_regV & (1 << 12)) != 0)
 					_emu.Cartridge?.TickScanline();
 
-				Bus.WriteByte(_regV, value);
+				_bus.WriteByte(_regV, value);
 				if (_ctrlAddrIncrMode)
 				{
 					_regV += 32;
@@ -412,16 +389,16 @@ internal sealed class Ppu
 
 								var paletteOffset = PpuBus.PaletteRamAddress + 0x11 + (paletteIndex * 4);
 
-								var msb = Bus.ReadByte((ushort)(tileOff + y + 8));
-								var lsb = Bus.ReadByte((ushort)(tileOff + y));
+								var msb = _bus.ReadByte((ushort)(tileOff + y + 8));
+								var lsb = _bus.ReadByte((ushort)(tileOff + y));
 
 								var colorIndex = (((msb >> x) & 1) << 1) | ((lsb >> x) & 1);
 								var color = colorIndex switch
 								{
 									0 => Color.Transparent,
-									1 => _palette[Bus.ReadByte((ushort)(paletteOffset + 0))],
-									2 => _palette[Bus.ReadByte((ushort)(paletteOffset + 1))],
-									3 => _palette[Bus.ReadByte((ushort)(paletteOffset + 2))],
+									1 => _palette[_bus.ReadByte((ushort)(paletteOffset + 0))],
+									2 => _palette[_bus.ReadByte((ushort)(paletteOffset + 1))],
+									3 => _palette[_bus.ReadByte((ushort)(paletteOffset + 2))],
 									_ => throw new UnreachableException()
 								};
 
@@ -557,7 +534,7 @@ internal sealed class Ppu
 		}
 
 		_cycle++;
-		if (_cycle >= _cyclesPerScanline)
+		if (_cycle >= CyclesPerScanline)
 		{
 			_cycle = 0;
 
@@ -581,13 +558,13 @@ internal sealed class Ppu
 				_bgFetchAddress = (ushort)(0x2000 | (_regV & 0x0FFF));
 				break;
 			case 1: // Nametable byte
-				_bgFetchTile = Bus.ReadByte(_bgFetchAddress);
+				_bgFetchTile = _bus.ReadByte(_bgFetchAddress);
 				break;
 			case 2:
 				_bgFetchAddress = (ushort)(0x23C0 | (_regV & 0x0C00) | ((_regV >> 4) & 0x38) | ((_regV >> 2) & 0x07));
 				break;
 			case 3: // Attribute byte
-				_bgFetchAttribute = Bus.ReadByte(_bgFetchAddress);
+				_bgFetchAttribute = _bus.ReadByte(_bgFetchAddress);
 				break;
 			case 4:
 				{
@@ -598,7 +575,7 @@ internal sealed class Ppu
 					break;
 				}
 			case 5:
-				_bgFetchPatternLow = Bus.ReadByte(_bgFetchAddress);
+				_bgFetchPatternLow = _bus.ReadByte(_bgFetchAddress);
 				break;
 			case 6:
 				{
@@ -610,7 +587,7 @@ internal sealed class Ppu
 					break;
 				}
 			case 7:
-				_bgFetchPatternHigh = Bus.ReadByte(_bgFetchAddress);
+				_bgFetchPatternHigh = _bus.ReadByte(_bgFetchAddress);
 				break;
 		}
 
@@ -624,7 +601,7 @@ internal sealed class Ppu
 		// If rendering is disabled, render EXT color
 		if (!RenderingEnabled)
 		{
-			var paletteIndex = Bus.ReadByte(PpuBus.PaletteRamAddress);
+			var paletteIndex = _bus.ReadByte(PpuBus.PaletteRamAddress);
 			paletteIndex %= (byte)_palette.Length;
 			var color = _palette[paletteIndex];
 			Framebuffer[_nextPixelIndex++] = color;
@@ -645,7 +622,7 @@ internal sealed class Ppu
 		if (!_maskShowBackground || (!_maskShowBackgroundInLeftmost8Pixels && screenX < 8) || bgColorIndex == 0)
 		{
 			if (spriteColor == Color.Transparent) // No sprite pixel here, render EXT
-				Framebuffer[_nextPixelIndex++] = _palette[Bus.ReadByte(PpuBus.PaletteRamAddress)];
+				Framebuffer[_nextPixelIndex++] = _palette[_bus.ReadByte(PpuBus.PaletteRamAddress)];
 			else // Sprite pixel here, render sprite
 				Framebuffer[_nextPixelIndex++] = spriteColor;
 			return;
@@ -653,9 +630,9 @@ internal sealed class Ppu
 
 		var bgColor = bgColorIndex switch
 		{
-			1 => _palette[Bus.ReadByte((ushort)(bgPaletteOffset + 0))],
-			2 => _palette[Bus.ReadByte((ushort)(bgPaletteOffset + 1))],
-			3 => _palette[Bus.ReadByte((ushort)(bgPaletteOffset + 2))],
+			1 => _palette[_bus.ReadByte((ushort)(bgPaletteOffset + 0))],
+			2 => _palette[_bus.ReadByte((ushort)(bgPaletteOffset + 1))],
+			3 => _palette[_bus.ReadByte((ushort)(bgPaletteOffset + 2))],
 			_ => throw new UnreachableException()
 		};
 

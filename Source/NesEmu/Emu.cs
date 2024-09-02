@@ -24,7 +24,7 @@ internal sealed class Emu : IDisposable
 
 	private readonly AudioClient? _audioClient;
 
-	public Emu()
+	public Emu(string romFilePath)
 	{
 		Cpu = new(this);
 		Ppu = new Ppu(this);
@@ -35,7 +35,7 @@ internal sealed class Emu : IDisposable
 			_audioClient = new(AudioFormat.IeeeFloat, 44100, 32, 1);
 
 		//using (var fs = File.OpenRead(@"C:\Stuff\Roms\NES\nes-test-roms-master\mmc3_test_2\rom_singles\5-MMC3.nes"))
-		using (var fs = File.OpenRead(@"/home/adrian/roms/nes/smb3.nes"))
+		using (var fs = File.OpenRead(romFilePath))
 			Cartridge = new Cartridge(Ppu, fs);
 
 		Cpu.Reset();
@@ -55,22 +55,30 @@ internal sealed class Emu : IDisposable
 		_audioClient?.Start();
 
 		var stopwatch = Stopwatch.StartNew();
-		
+
 		while (_running)
 		{
 			cycles++;
 
-			if (Ppu.RequestNmi)
+			/*if (Ppu.RequestNmi)
 			{
 				Ppu.RequestNmi = false;
 				Cpu.RequestNmi();
 			}
 
 			if (Apu.AcknowledgeInterrupt() || (Cartridge?.AcknowledgeInterrupt() ?? false))
-				Cpu.RequestIrq();
+				Cpu.RequestIrq();*/
 
 			if (cycles % 12 == 0 && Ppu.OamWaitCycles == 0)
 			{
+				if (Ppu.RequestNmi)
+				{
+					Ppu.RequestNmi = false;
+					Cpu.RequestNmi();
+				}
+				else if (!Cpu.FlagInterruptDisable && Apu.AcknowledgeInterrupt() || (Cartridge?.AcknowledgeInterrupt() ?? false))
+					Cpu.RequestIrq();
+
 				Cpu.Tick();
 				Apu.Tick();
 			}
@@ -98,7 +106,7 @@ internal sealed class Emu : IDisposable
 			}
 			else if (cycles >= CyclesPerFrame)
 			{
-				while (stopwatch.Elapsed.TotalMilliseconds < 1000 / FramesPerSecond) ;
+				while (stopwatch.Elapsed.TotalMilliseconds < 1000 / FramesPerSecond) { }
 				cycles -= (uint)CyclesPerFrame;
 				stopwatch.Restart();
 			}

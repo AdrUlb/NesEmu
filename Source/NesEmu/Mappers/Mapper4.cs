@@ -2,8 +2,8 @@
 
 internal sealed class Mapper4 : Mapper
 {
-	private const int _prgBankSize = 0x2000;
-	private const int _chrBankSize = 0x0400;
+	private const int PrgBankSize = 0x2000;
+	private const int ChrBankSize = 0x0400;
 
 	private readonly byte[] _prgRom;
 	private readonly byte[] _chrRom;
@@ -40,13 +40,13 @@ internal sealed class Mapper4 : Mapper
 		var prgRomSize = prgRomBanks * 0x4000; // 16384
 		var chrRomSize = chrRomBanks * 0x2000; // 8192
 
-		_prgRomBanks = prgRomSize / _prgBankSize;
-		_chrRomBanks = chrRomSize / _chrBankSize;
+		_prgRomBanks = prgRomSize / PrgBankSize;
+		_chrRomBanks = chrRomSize / ChrBankSize;
 
 		_prgLast = _prgRomBanks - 1;
 		_prgSecondLast = _prgRomBanks - 2;
 
-		_banks[0] = 0 % _chrRomBanks;
+		_banks[0] = 0;
 		_banks[1] = 2 % _chrRomBanks;
 		_banks[2] = 4 % _chrRomBanks;
 		_banks[3] = 5 % _chrRomBanks;
@@ -69,15 +69,15 @@ internal sealed class Mapper4 : Mapper
 	{
 		>= 0x6000 and <= 0x7FFF => _prgRam[address - 0x6000],
 
-		>= 0xA000 and <= 0xBFFF => _prgRom[address - 0xA000 + (_banks[7] * _prgBankSize)],
+		>= 0xA000 and <= 0xBFFF => _prgRom[address - 0xA000 + (_banks[7] * PrgBankSize)],
 
-		>= 0x8000 and <= 0x9FFF when !_prgRomBankMode => _prgRom[address - 0x8000 + (_banks[6] * _prgBankSize)],
-		>= 0xC000 and <= 0xDFFF when !_prgRomBankMode => _prgRom[address - 0xC000 + (_prgSecondLast * _prgBankSize)],
+		>= 0x8000 and <= 0x9FFF when !_prgRomBankMode => _prgRom[address - 0x8000 + (_banks[6] * PrgBankSize)],
+		>= 0xC000 and <= 0xDFFF when !_prgRomBankMode => _prgRom[address - 0xC000 + (_prgSecondLast * PrgBankSize)],
 
-		>= 0x8000 and <= 0x9FFF when _prgRomBankMode => _prgRom[address - 0x8000 + (_prgSecondLast * _prgBankSize)],
-		>= 0xC000 and <= 0xDFFF when _prgRomBankMode => _prgRom[address - 0xC000 + (_banks[6] * _prgBankSize)],
+		>= 0x8000 and <= 0x9FFF when _prgRomBankMode => _prgRom[address - 0x8000 + (_prgSecondLast * PrgBankSize)],
+		>= 0xC000 and <= 0xDFFF when _prgRomBankMode => _prgRom[address - 0xC000 + (_banks[6] * PrgBankSize)],
 
-		>= 0xE000 and <= 0xFFFF => _prgRom[address - 0xE000 + (_prgLast * _prgBankSize)],
+		>= 0xE000 => _prgRom[address - 0xE000 + (_prgLast * PrgBankSize)],
 
 		_ => 0xFF
 	};
@@ -130,7 +130,7 @@ internal sealed class Mapper4 : Mapper
 					_irqCounter = 0;
 				}
 				break;
-			case >= 0xE000 and <= 0xFFFF:
+			case >= 0xE000:
 				if (address % 2 == 0)
 				{
 					_irqEnabled = false;
@@ -146,28 +146,32 @@ internal sealed class Mapper4 : Mapper
 
 	public override byte PpuReadByte(Ppu ppu, ushort address)
 	{
-		if (address is >= 0x0000 and <= 0x1FFF && _chrInvert)
-			address ^= 0x1000;
-
-		if (address is >= 0x3000 and < 0x3F00)
-			address -= 0x1000;
+		switch (address)
+		{
+			case <= 0x1FFF when _chrInvert:
+				address ^= 0x1000;
+				break;
+			case >= 0x3000 and < 0x3F00:
+				address -= 0x1000;
+				break;
+		}
 
 		return address switch
 		{
-			>= 0x0000 and <= 0x03FF => _chrRom[address - 0x0000 + (_banks[0] * _chrBankSize)],
-			>= 0x0400 and <= 0x07FF => _chrRom[address - 0x0400 + (_banks[0] * _chrBankSize) + _chrBankSize],
-			>= 0x0800 and <= 0x0BFF => _chrRom[address - 0x0800 + (_banks[1] * _chrBankSize)],
-			>= 0x0C00 and <= 0x0FFF => _chrRom[address - 0x0C00 + (_banks[1] * _chrBankSize) + _chrBankSize],
+			<= 0x03FF => _chrRom[address - 0x0000 + (_banks[0] * ChrBankSize)],
+			<= 0x07FF => _chrRom[address - 0x0400 + (_banks[0] * ChrBankSize) + ChrBankSize],
+			<= 0x0BFF => _chrRom[address - 0x0800 + (_banks[1] * ChrBankSize)],
+			<= 0x0FFF => _chrRom[address - 0x0C00 + (_banks[1] * ChrBankSize) + ChrBankSize],
 
-			>= 0x1000 and <= 0x13FF => _chrRom[address - 0x1000 + (_banks[2] * _chrBankSize)],
-			>= 0x1400 and <= 0x17FF => _chrRom[address - 0x1400 + (_banks[3] * _chrBankSize)],
-			>= 0x1800 and <= 0x1BFF => _chrRom[address - 0x1800 + (_banks[4] * _chrBankSize)],
-			>= 0x1C00 and <= 0x1FFF => _chrRom[address - 0x1C00 + (_banks[5] * _chrBankSize)],
+			<= 0x13FF => _chrRom[address - 0x1000 + (_banks[2] * ChrBankSize)],
+			<= 0x17FF => _chrRom[address - 0x1400 + (_banks[3] * ChrBankSize)],
+			<= 0x1BFF => _chrRom[address - 0x1800 + (_banks[4] * ChrBankSize)],
+			<= 0x1FFF => _chrRom[address - 0x1C00 + (_banks[5] * ChrBankSize)],
 
-			>= PpuBus.Nametable0Address and < PpuBus.Nametable1Address => ppu.Vram[address - PpuBus.Nametable0Address + Nametable0Offset],
-			>= PpuBus.Nametable1Address and < PpuBus.Nametable2Address => ppu.Vram[address - PpuBus.Nametable1Address + Nametable1Offset],
-			>= PpuBus.Nametable2Address and < PpuBus.Nametable3Address => ppu.Vram[address - PpuBus.Nametable2Address + Nametable2Offset],
-			>= PpuBus.Nametable3Address and < 0x3000 => ppu.Vram[address - PpuBus.Nametable3Address + Nametable3Offset],
+			< PpuBus.Nametable1Address => ppu.Vram[address - PpuBus.Nametable0Address + Nametable0Offset],
+			< PpuBus.Nametable2Address => ppu.Vram[address - PpuBus.Nametable1Address + Nametable1Offset],
+			< PpuBus.Nametable3Address => ppu.Vram[address - PpuBus.Nametable2Address + Nametable2Offset],
+			< 0x3000 => ppu.Vram[address - PpuBus.Nametable3Address + Nametable3Offset],
 			_ => 0xFF
 		};
 	}
@@ -177,25 +181,49 @@ internal sealed class Mapper4 : Mapper
 		if (address is >= 0x3000 and < 0x3F00)
 			address -= 0x1000;
 
-		if (address is >= 0x0000 and <= 0x1FFF && _chrInvert)
+		if (address <= 0x1FFF && _chrInvert)
 			address ^= 0x1000;
 
 		switch (address)
 		{
-			case >= 0x0000 and <= 0x03FF: _chrRom[address - 0x0000 + (_banks[0] * _chrBankSize)] = value; break;
-			case >= 0x0400 and <= 0x07FF: _chrRom[address - 0x0400 + (_banks[0] * _chrBankSize) + _chrBankSize] = value; break;
-			case >= 0x0800 and <= 0x0BFF: _chrRom[address - 0x0800 + (_banks[1] * _chrBankSize)] = value; break;
-			case >= 0x0C00 and <= 0x0FFF: _chrRom[address - 0x0C00 + (_banks[1] * _chrBankSize) + _chrBankSize] = value; break;
+			case <= 0x03FF:
+				_chrRom[address - 0x0000 + (_banks[0] * ChrBankSize)] = value;
+				break;
+			case <= 0x07FF:
+				_chrRom[address - 0x0400 + (_banks[0] * ChrBankSize) + ChrBankSize] = value;
+				break;
+			case <= 0x0BFF:
+				_chrRom[address - 0x0800 + (_banks[1] * ChrBankSize)] = value;
+				break;
+			case <= 0x0FFF:
+				_chrRom[address - 0x0C00 + (_banks[1] * ChrBankSize) + ChrBankSize] = value;
+				break;
 
-			case >= 0x1000 and <= 0x13FF: _chrRom[address - 0x1000 + (_banks[2] * _chrBankSize)] = value; break;
-			case >= 0x1400 and <= 0x17FF: _chrRom[address - 0x1400 + (_banks[3] * _chrBankSize)] = value; break;
-			case >= 0x1800 and <= 0x1BFF: _chrRom[address - 0x1800 + (_banks[4] * _chrBankSize)] = value; break;
-			case >= 0x1C00 and <= 0x1FFF: _chrRom[address - 0x1C00 + (_banks[5] * _chrBankSize)] = value; break;
+			case <= 0x13FF:
+				_chrRom[address - 0x1000 + (_banks[2] * ChrBankSize)] = value;
+				break;
+			case <= 0x17FF:
+				_chrRom[address - 0x1400 + (_banks[3] * ChrBankSize)] = value;
+				break;
+			case <= 0x1BFF:
+				_chrRom[address - 0x1800 + (_banks[4] * ChrBankSize)] = value;
+				break;
+			case <= 0x1FFF:
+				_chrRom[address - 0x1C00 + (_banks[5] * ChrBankSize)] = value;
+				break;
 
-			case >= PpuBus.Nametable0Address and < PpuBus.Nametable1Address: ppu.Vram[address - PpuBus.Nametable0Address + Nametable0Offset] = value; break;
-			case >= PpuBus.Nametable1Address and < PpuBus.Nametable2Address: ppu.Vram[address - PpuBus.Nametable1Address + Nametable1Offset] = value; break;
-			case >= PpuBus.Nametable2Address and < PpuBus.Nametable3Address: ppu.Vram[address - PpuBus.Nametable2Address + Nametable2Offset] = value; break;
-			case >= PpuBus.Nametable3Address and < 0x3000: ppu.Vram[address - PpuBus.Nametable3Address + Nametable3Offset] = value; break;
+			case < PpuBus.Nametable1Address:
+				ppu.Vram[address - PpuBus.Nametable0Address + Nametable0Offset] = value;
+				break;
+			case < PpuBus.Nametable2Address:
+				ppu.Vram[address - PpuBus.Nametable1Address + Nametable1Offset] = value;
+				break;
+			case < PpuBus.Nametable3Address:
+				ppu.Vram[address - PpuBus.Nametable2Address + Nametable2Offset] = value;
+				break;
+			case < 0x3000:
+				ppu.Vram[address - PpuBus.Nametable3Address + Nametable3Offset] = value;
+				break;
 		}
 	}
 

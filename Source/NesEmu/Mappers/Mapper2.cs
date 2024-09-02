@@ -9,10 +9,9 @@ internal sealed class Mapper2 : Mapper
 	private readonly bool _chrRam = false;
 
 	private int _prgBank0 = 0;
-	private readonly int _prgBank1 = 1;
+	private readonly int _prgBank1;
 
 	private readonly int _prgRomBanks;
-	private readonly int _chrRomBanks;
 
 	public Mapper2(int prgRomBanks, int chrRomBanks, MirroringMode mirroringMode, Stream data)
 	{
@@ -23,7 +22,6 @@ internal sealed class Mapper2 : Mapper
 		}
 
 		_prgRomBanks = prgRomBanks; // Number of 16k banks
-		_chrRomBanks = chrRomBanks; // Number of 8k banks
 		_prgRam = new byte[0x2000];
 
 		var prgRomSize = prgRomBanks * 0x4000; // 16384
@@ -45,7 +43,7 @@ internal sealed class Mapper2 : Mapper
 	{
 		>= 0x6000 and <= 0x7FFF => _prgRam[address - 0x6000],
 		>= 0x8000 and <= 0xBFFF => _prgRom[address - 0x8000 + (_prgBank0 * 0x4000)],
-		>= 0xC000 and <= 0xFFFF => _prgRom[address - 0xC000 + (_prgBank1 * 0x4000)],
+		>= 0xC000 => _prgRom[address - 0xC000 + (_prgBank1 * 0x4000)],
 		_ => 0xFF
 	};
 
@@ -65,10 +63,10 @@ internal sealed class Mapper2 : Mapper
 		return address switch
 		{
 			< PpuBus.Nametable0Address => _chrRom[address],
-			>= PpuBus.Nametable0Address and < PpuBus.Nametable1Address => ppu.Vram[address - PpuBus.Nametable0Address + Nametable0Offset],
-			>= PpuBus.Nametable1Address and < PpuBus.Nametable2Address => ppu.Vram[address - PpuBus.Nametable1Address + Nametable1Offset],
-			>= PpuBus.Nametable2Address and < PpuBus.Nametable3Address => ppu.Vram[address - PpuBus.Nametable2Address + Nametable2Offset],
-			>= PpuBus.Nametable3Address and < 0x3000 => ppu.Vram[address - PpuBus.Nametable3Address + Nametable3Offset],
+			< PpuBus.Nametable1Address => ppu.Vram[address - PpuBus.Nametable0Address + Nametable0Offset],
+			< PpuBus.Nametable2Address => ppu.Vram[address - PpuBus.Nametable1Address + Nametable1Offset],
+			< PpuBus.Nametable3Address => ppu.Vram[address - PpuBus.Nametable2Address + Nametable2Offset],
+			< 0x3000 => ppu.Vram[address - PpuBus.Nametable3Address + Nametable3Offset],
 			_ => 0xFF
 		};
 	}
@@ -80,11 +78,21 @@ internal sealed class Mapper2 : Mapper
 
 		switch (address)
 		{
-			case < PpuBus.Nametable0Address when _chrRam: _chrRom[address] = value; break;
-			case >= PpuBus.Nametable0Address and < PpuBus.Nametable1Address: ppu.Vram[address - PpuBus.Nametable0Address + Nametable0Offset] = value; break;
-			case >= PpuBus.Nametable1Address and < PpuBus.Nametable2Address: ppu.Vram[address - PpuBus.Nametable1Address + Nametable1Offset] = value; break;
-			case >= PpuBus.Nametable2Address and < PpuBus.Nametable3Address: ppu.Vram[address - PpuBus.Nametable2Address + Nametable2Offset] = value; break;
-			case >= PpuBus.Nametable3Address and < 0x3000: ppu.Vram[address - PpuBus.Nametable3Address + Nametable3Offset] = value; break;
+			case < PpuBus.Nametable0Address when _chrRam:
+				_chrRom[address] = value;
+				break;
+			case >= PpuBus.Nametable0Address and < PpuBus.Nametable1Address:
+				ppu.Vram[address - PpuBus.Nametable0Address + Nametable0Offset] = value;
+				break;
+			case >= PpuBus.Nametable1Address and < PpuBus.Nametable2Address:
+				ppu.Vram[address - PpuBus.Nametable1Address + Nametable1Offset] = value;
+				break;
+			case >= PpuBus.Nametable2Address and < PpuBus.Nametable3Address:
+				ppu.Vram[address - PpuBus.Nametable2Address + Nametable2Offset] = value;
+				break;
+			case >= PpuBus.Nametable3Address and < 0x3000:
+				ppu.Vram[address - PpuBus.Nametable3Address + Nametable3Offset] = value;
+				break;
 		}
 	}
 }

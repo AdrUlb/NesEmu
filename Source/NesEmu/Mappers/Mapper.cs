@@ -57,7 +57,7 @@ internal abstract class Mapper
 		if (!RequestInterrupt)
 			return false;
 
-		//RequestInterrupt = false;
+		RequestInterrupt = false;
 		return true;
 	}
 }
