@@ -10,9 +10,9 @@ internal sealed class Emu : IDisposable
 	private volatile bool _running = false;
 
 	public const int CyclesPerSecond = 21477272;
-	public const double FramesPerSecond = CyclesPerSecond / 4.0 / 262.5 / 341.0;
-	public const double CyclesPerFrame = CyclesPerSecond / FramesPerSecond;
-	public static readonly double TicksPerFrame = Stopwatch.Frequency / FramesPerSecond;
+	private const double _framesPerSecond = CyclesPerSecond / 4.0 / 262.5 / 341.0;
+	private const double _cyclesPerFrame = CyclesPerSecond / _framesPerSecond;
+	public static readonly double TicksPerFrame = Stopwatch.Frequency / _framesPerSecond;
 	private static readonly int _cyclesPerAudioSample = CyclesPerSecond / 44100;
 
 	public event EventHandler? Vblank;
@@ -20,7 +20,7 @@ internal sealed class Emu : IDisposable
 	public readonly Ppu Ppu;
 	public readonly Apu Apu;
 	public readonly Controller Controller;
-	public Cartridge? Cartridge;
+	public readonly Cartridge Cartridge;
 
 	private readonly AudioClient? _audioClient;
 
@@ -60,15 +60,6 @@ internal sealed class Emu : IDisposable
 		{
 			cycles++;
 
-			/*if (Ppu.RequestNmi)
-			{
-				Ppu.RequestNmi = false;
-				Cpu.RequestNmi();
-			}
-
-			if (Apu.AcknowledgeInterrupt() || (Cartridge?.AcknowledgeInterrupt() ?? false))
-				Cpu.RequestIrq();*/
-
 			if (cycles % 12 == 0 && Ppu.OamWaitCycles == 0)
 			{
 				if (Ppu.RequestNmi)
@@ -76,7 +67,7 @@ internal sealed class Emu : IDisposable
 					Ppu.RequestNmi = false;
 					Cpu.RequestNmi();
 				}
-				else if (!Cpu.FlagInterruptDisable && Apu.AcknowledgeInterrupt() || (Cartridge?.AcknowledgeInterrupt() ?? false))
+				else if (!Cpu.FlagInterruptDisable && Apu.AcknowledgeInterrupt() || Cartridge.AcknowledgeInterrupt())
 					Cpu.RequestIrq();
 
 				Cpu.Tick();
@@ -104,10 +95,10 @@ internal sealed class Emu : IDisposable
 					}
 				}
 			}
-			else if (cycles >= CyclesPerFrame)
+			else if (cycles >= _cyclesPerFrame)
 			{
-				while (stopwatch.Elapsed.TotalMilliseconds < 1000 / FramesPerSecond) { }
-				cycles -= (uint)CyclesPerFrame;
+				while (stopwatch.Elapsed.TotalMilliseconds < 1000 / _framesPerSecond) { }
+				cycles -= (uint)_cyclesPerFrame;
 				stopwatch.Restart();
 			}
 		}

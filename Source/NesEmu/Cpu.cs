@@ -530,6 +530,8 @@ internal sealed class Cpu
 				_currentOpcode = FetchByte();
 		}
 
+		//Console.WriteLine($"IP={_regPc:X4}");
+		
 		switch (CurrentOperation.AddressingMode)
 		{
 			case AddressingMode.Indirect:
